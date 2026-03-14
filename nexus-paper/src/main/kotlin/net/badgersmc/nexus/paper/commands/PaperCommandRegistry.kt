@@ -68,19 +68,23 @@ class PaperCommandRegistry(
         sub: PaperSubcommandDefinition,
         bean: Any
     ) {
-        var current = Commands.literal(sub.path.first())
+        // Build the literal chain from the path segments, keeping a reference to the head so
+        // we attach the full chain to root (not just the deepest node).
+        val head = Commands.literal(sub.path.first())
+        var current = head
         for (segment in sub.path.drop(1)) {
             val next = Commands.literal(segment)
             current.then(next)
             current = next
         }
 
-        sub.permission?.let { perm ->
-            current.requires { it.sender.hasPermission(perm) }
-        }
-
-        if (sub.isPlayerOnly) {
-            current.requires { it.sender is Player }
+        // Combine permission + playerOnly into a single requires() call.
+        // Brigadier's requires() replaces (not composes) on each call, so two separate
+        // calls would silently drop the first condition.
+        val permission = sub.permission
+        current.requires { source ->
+            (permission == null || source.sender.hasPermission(permission)) &&
+            (!sub.isPlayerOnly || source.sender is Player)
         }
 
         var argNode: ArgumentBuilder<CommandSourceStack, *> = current
@@ -97,7 +101,7 @@ class PaperCommandRegistry(
             Command.SINGLE_SUCCESS
         }
 
-        root.then(current)
+        root.then(head)
     }
 
     private fun executeSubcommand(

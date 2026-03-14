@@ -11,7 +11,8 @@ import kotlin.reflect.KClass
  * that know how to create Hytale command arguments for those types.
  *
  * **Built-in Resolvers:**
- * - String, Int, Double, Float, Boolean (registered automatically)
+ * - No resolvers are registered automatically in nexus-core.
+ * - Platform modules (e.g., nexus-paper) register their own built-in resolvers on init.
  *
  * **Custom Resolvers:**
  * Plugin developers can register custom resolvers for their own types:

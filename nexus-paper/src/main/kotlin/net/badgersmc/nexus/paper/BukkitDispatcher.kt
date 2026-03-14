@@ -8,15 +8,16 @@ import kotlin.coroutines.CoroutineContext
 
 /**
  * Coroutine dispatcher that executes on the Paper main thread.
- * If already on the main thread, executes inline (no scheduling overhead).
+ * If already on the main thread, the coroutine framework skips dispatch entirely
+ * (via [isDispatchNeeded]) — no scheduling overhead, no extra frame.
  * Use via: withContext(plugin.bukkitDispatcher) { /* Bukkit API here */ }
  */
 class BukkitDispatcher(private val plugin: Plugin) : CoroutineDispatcher() {
+    /** Returns false when already on the main thread, letting the framework run inline. */
+    override fun isDispatchNeeded(context: CoroutineContext): Boolean =
+        !Bukkit.isPrimaryThread()
+
     override fun dispatch(context: CoroutineContext, block: Runnable) {
-        if (Bukkit.isPrimaryThread()) {
-            block.run()
-        } else {
-            plugin.server.scheduler.runTask(plugin, block)
-        }
+        plugin.server.scheduler.runTask(plugin, block)
     }
 }

@@ -12,6 +12,8 @@ object PaperArgumentResolvers {
     private val resolvers = mutableMapOf<KClass<*>, PaperArgumentResolver<*>>()
 
     init {
+        // String — captures a single word (stops at spaces). Use a custom resolver with
+        // StringArgumentType.greedyString() if you need multi-word arguments.
         register(object : PaperArgumentResolver<String> {
             override val type = String::class
             override fun argumentType(): ArgumentType<String> = StringArgumentType.word()
@@ -43,8 +45,10 @@ object PaperArgumentResolvers {
                 BoolArgumentType.getBool(ctx, name)
         })
         // Player — uses Paper's built-in player selector.
-        // ArgumentTypes.player() returns ArgumentType<PlayerSelectorArgumentResolver>; we cast to ArgumentType<Player>
-        // since the actual extraction goes through PlayerSelectorArgumentResolver.resolve().
+        // ArgumentTypes.player() returns ArgumentType<PlayerSelectorArgumentResolver>.
+        // We cast to ArgumentType<Player> to satisfy the interface, but extraction actually goes
+        // through PlayerSelectorArgumentResolver.resolve() — the ArgumentType generic doesn't match
+        // the extracted type, which is unavoidable with Paper's selector API.
         register(object : PaperArgumentResolver<Player> {
             override val type = Player::class
             @Suppress("UNCHECKED_CAST")
@@ -53,7 +57,8 @@ object PaperArgumentResolvers {
             override fun extract(ctx: CommandContext<*>, name: String): Player {
                 val source = ctx.source as CommandSourceStack
                 val resolver = ctx.getArgument(name, PlayerSelectorArgumentResolver::class.java)
-                return resolver.resolve(source).first()
+                return resolver.resolve(source).firstOrNull()
+                    ?: throw IllegalArgumentException("No player found for argument '$name'")
             }
         })
     }
