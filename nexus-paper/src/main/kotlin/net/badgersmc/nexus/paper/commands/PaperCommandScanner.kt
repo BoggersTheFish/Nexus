@@ -10,6 +10,7 @@ import net.badgersmc.nexus.paper.commands.annotations.Async
 import net.badgersmc.nexus.paper.commands.annotations.Permission
 import net.badgersmc.nexus.paper.commands.annotations.PlayerOnly
 import net.badgersmc.nexus.paper.commands.annotations.Subcommand
+import net.badgersmc.nexus.paper.commands.annotations.Suggests
 import net.badgersmc.nexus.paper.commands.arguments.PaperArgumentResolvers
 import org.slf4j.LoggerFactory
 import kotlin.reflect.KClass
@@ -51,10 +52,12 @@ class PaperCommandScanner {
                 val isPlayerOnly = method.hasAnnotation<PlayerOnly>()
                 val isAsync = method.hasAnnotation<Async>() || method.isSuspend
 
+                val suggestionsMap = mutableMapOf<String, String>()
                 val parameters = method.parameters.drop(1) // skip 'this'
                     .mapIndexed { idx, param ->
                         val arg = param.findAnnotation<Arg>()
                         val ctx = param.findAnnotation<Context>()
+                        val suggests = param.findAnnotation<Suggests>()
                         if (arg == null && ctx == null) throw CommandException(
                             "Method ${method.name} parameter '${param.name}' needs @Arg or @Context"
                         )
@@ -65,6 +68,9 @@ class PaperCommandScanner {
                                 "in ${klass.simpleName}::${method.name}"
                             )
                         }
+                        if (suggests != null && arg != null) {
+                            suggestionsMap[param.name ?: "param$idx"] = suggests.value
+                        }
                         CommandParameter(
                             name = param.name ?: "param$idx",
                             type = param.type.classifier as KClass<*>,
@@ -74,7 +80,7 @@ class PaperCommandScanner {
                         )
                     }
 
-                PaperSubcommandDefinition(path, method, parameters, permission, isPlayerOnly, isAsync)
+                PaperSubcommandDefinition(path, method, parameters, permission, isPlayerOnly, isAsync, suggestionsMap)
             }
 
         if (subcommands.isEmpty()) throw CommandException(

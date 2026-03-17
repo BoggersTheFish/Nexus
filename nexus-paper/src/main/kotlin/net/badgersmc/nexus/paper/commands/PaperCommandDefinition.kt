@@ -20,5 +20,7 @@ data class PaperSubcommandDefinition(
     val parameters: List<CommandParameter>,
     val permission: String?,
     val isPlayerOnly: Boolean,
-    val isAsync: Boolean
+    val isAsync: Boolean,
+    /** Maps parameter names to suggestion provider names (from @Suggests). */
+    val suggestions: Map<String, String> = emptyMap()
 )

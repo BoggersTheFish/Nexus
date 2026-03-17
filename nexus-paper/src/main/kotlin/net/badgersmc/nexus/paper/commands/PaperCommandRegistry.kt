@@ -4,6 +4,7 @@ import com.mojang.brigadier.Command
 import com.mojang.brigadier.builder.ArgumentBuilder
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
+import com.mojang.brigadier.suggestion.SuggestionProvider
 import com.mojang.brigadier.tree.LiteralCommandNode
 import io.papermc.paper.command.brigadier.CommandSourceStack
 import io.papermc.paper.command.brigadier.Commands
@@ -21,7 +22,8 @@ import kotlin.reflect.full.callSuspend
 class PaperCommandRegistry(
     private val plugin: JavaPlugin,
     private val nexusScope: CoroutineScope,
-    private val beanFactory: BeanFactory
+    private val beanFactory: BeanFactory,
+    private val suggestionProviders: Map<String, SuggestionProvider<CommandSourceStack>> = emptyMap()
 ) {
     private val logger = LoggerFactory.getLogger(PaperCommandRegistry::class.java)
 
@@ -87,18 +89,43 @@ class PaperCommandRegistry(
             (!sub.isPlayerOnly || source.sender is Player)
         }
 
-        var argNode: ArgumentBuilder<CommandSourceStack, *> = current
-        for (param in sub.parameters.filter { it.isArg }) {
+        // Build argument chain bottom-up: Brigadier's then() calls build() immediately on the
+        // child, so adding children to a builder AFTER it was passed to then() has no effect on
+        // the already-built node. We must construct the deepest node first and work upward.
+        val argParams = sub.parameters.filter { it.isArg }
+        val argBuilders = argParams.map { param ->
             val resolver = PaperArgumentResolvers.get(param.type)
                 ?: throw CommandException("No resolver for ${param.type.simpleName}")
-            val argBuilder = Commands.argument(param.name, resolver.argumentType())
-            argNode.then(argBuilder)
-            argNode = argBuilder
+            val builder = Commands.argument(param.name, resolver.argumentType())
+            // Attach tab-completion suggestions if @Suggests was specified
+            val providerName = sub.suggestions[param.name]
+            if (providerName != null) {
+                val provider = suggestionProviders[providerName]
+                    ?: throw CommandException(
+                        "No suggestion provider '$providerName' registered " +
+                        "(referenced by @Suggests on parameter '${param.name}')"
+                    )
+                builder.suggests(provider)
+            }
+            builder
         }
 
-        argNode.executes { ctx ->
-            executeSubcommand(ctx, sub, bean)
-            Command.SINGLE_SUCCESS
+        if (argBuilders.isNotEmpty()) {
+            // Add executes to the deepest (last) argument
+            argBuilders.last().executes { ctx ->
+                executeSubcommand(ctx, sub, bean)
+                Command.SINGLE_SUCCESS
+            }
+            // Chain bottom-up so each parent sees its fully-built child
+            for (i in argBuilders.size - 2 downTo 0) {
+                argBuilders[i].then(argBuilders[i + 1])
+            }
+            current.then(argBuilders.first())
+        } else {
+            current.executes { ctx ->
+                executeSubcommand(ctx, sub, bean)
+                Command.SINGLE_SUCCESS
+            }
         }
 
         root.then(head)

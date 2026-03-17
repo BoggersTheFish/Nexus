@@ -2,6 +2,12 @@ package net.badgersmc.nexus.config
 
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
+import com.charleskorn.kaml.YamlList
+import com.charleskorn.kaml.YamlMap
+import com.charleskorn.kaml.YamlNode
+import com.charleskorn.kaml.YamlNull
+import com.charleskorn.kaml.YamlScalar
+import com.charleskorn.kaml.YamlTaggedNode
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import kotlin.reflect.KClass
@@ -37,7 +43,7 @@ class ConfigLoader(private val configDirectory: Path) {
      * If the file doesn't exist, creates it with default values.
      */
     fun <T : Any> load(configClass: KClass<T>): T {
-        val instance = configClass.constructors.first { it.parameters.isEmpty() }.call()
+        val instance = configClass.constructors.first().callBy(emptyMap())
         val fileName = getFileName(configClass)
         val file = configDirectory.resolve("$fileName$CONFIG_FILE_EXTENSION")
 
@@ -49,10 +55,8 @@ class ConfigLoader(private val configDirectory: Path) {
 
         try {
             val content = file.toFile().readText()
-            val yamlMap = yaml.decodeFromString(
-                kotlinx.serialization.serializer<Map<String, Any?>>(),
-                content
-            )
+            val yamlNode = yaml.parseToYamlNode(content)
+            val yamlMap = yamlNodeToMap(yamlNode)
             loadFromMap(instance, yamlMap)
         } catch (e: Exception) {
             logger.error("Failed to load config from $file: ${e.message}", e)
@@ -90,10 +94,8 @@ class ConfigLoader(private val configDirectory: Path) {
 
         try {
             val content = file.toFile().readText()
-            val yamlMap = yaml.decodeFromString(
-                kotlinx.serialization.serializer<Map<String, Any?>>(),
-                content
-            )
+            val yamlNode = yaml.parseToYamlNode(content)
+            val yamlMap = yamlNodeToMap(yamlNode)
             loadFromMap(config, yamlMap)
         } catch (e: Exception) {
             logger.error("Failed to reload config from $file: ${e.message}", e)
@@ -312,6 +314,41 @@ class ConfigLoader(private val configDirectory: Path) {
             is String -> "\"$value\""
             is Number, is Boolean -> value.toString()
             else -> "\"$value\""
+        }
+    }
+
+    /**
+     * Convert a YamlNode tree into a Map<String, Any?> for reflection-based loading.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun yamlNodeToMap(node: YamlNode): Map<String, Any?> {
+        val unwrapped = if (node is YamlTaggedNode) node.innerNode else node
+        return when (unwrapped) {
+            is YamlMap -> unwrapped.entries.map { (key, value) ->
+                key.content to yamlNodeToAny(value)
+            }.toMap()
+            else -> emptyMap()
+        }
+    }
+
+    private fun yamlNodeToAny(node: YamlNode): Any? {
+        val unwrapped = if (node is YamlTaggedNode) node.innerNode else node
+        return when (unwrapped) {
+            is YamlNull -> null
+            is YamlScalar -> {
+                val content = unwrapped.content
+                // Try to parse as number or boolean, fall back to string
+                content.toBooleanStrictOrNull()
+                    ?: content.toIntOrNull()
+                    ?: content.toLongOrNull()
+                    ?: content.toDoubleOrNull()
+                    ?: content
+            }
+            is YamlMap -> unwrapped.entries.map { (key, value) ->
+                key.content to yamlNodeToAny(value)
+            }.toMap()
+            is YamlList -> unwrapped.items.map { yamlNodeToAny(it) }
+            else -> unwrapped.toString()
         }
     }
 
