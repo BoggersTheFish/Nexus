@@ -10,12 +10,14 @@ import com.hypixel.hytale.server.core.universe.world.World
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore
 import it.unimi.dsi.fastutil.objects.ObjectList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
 import net.badgersmc.nexus.commands.CommandDefinition
 import net.badgersmc.nexus.commands.CommandException
 import net.badgersmc.nexus.commands.arguments.ArgumentResolvers
-import org.slf4j.LoggerFactory
+import java.lang.reflect.Method
 import javax.annotation.Nonnull
-import kotlin.reflect.full.callSuspend
+import kotlin.reflect.KClass
+import kotlin.reflect.jvm.javaMethod
 
 /**
  * Adapter for target entity commands (AbstractTargetEntityCommand).
@@ -40,8 +42,10 @@ class TargetEntityCommandAdapter(
     definition.annotation.description
 ) {
 
-    private val logger = LoggerFactory.getLogger(TargetEntityCommandAdapter::class.java)
     private val arguments = mutableListOf<Any>()
+    private val isSuspend = definition.executeMethod.isSuspend
+    private val javaMethod: Method = definition.executeMethod.javaMethod
+        ?: throw CommandException("Could not get Java method for command '${definition.annotation.name}'")
 
     init {
         for (param in definition.parameters.filter { it.isArg }) {
@@ -73,8 +77,6 @@ class TargetEntityCommandAdapter(
             addAliases(*definition.annotation.aliases)
         }
 
-        logger.debug("Created TargetEntityCommandAdapter for command '{}' with {} arguments",
-            definition.annotation.name, arguments.size)
     }
 
     // Actual signature from JAR bytecode (NameAndType #256):
@@ -89,7 +91,8 @@ class TargetEntityCommandAdapter(
             val params = buildParameterArray(context, entities, world, store)
             invokeExecuteMethod(params)
         } catch (e: Exception) {
-            logger.error("Command '{}' execution failed", definition.annotation.name, e)
+            println("[HyCore] Command '${definition.annotation.name}' execution failed: ${e.message}")
+            e.printStackTrace()
             context.sendMessage(Message.raw("§cCommand failed: ${e.message ?: "Unknown error"}"))
         }
     }
@@ -108,7 +111,8 @@ class TargetEntityCommandAdapter(
                 param.isArg -> {
                     val arg = arguments[argIndex++]
                     val method = arg::class.java.getMethod("get", CommandContext::class.java)
-                    method.invoke(arg, context)
+                    val value = method.invoke(arg, context)
+                    value ?: zeroValue(param.type)
                 }
                 param.isContext -> {
                     when (param.type.simpleName) {
@@ -130,12 +134,24 @@ class TargetEntityCommandAdapter(
     }
 
     private fun invokeExecuteMethod(params: Array<Any?>) {
-        if (definition.executeMethod.isSuspend) {
+        if (isSuspend) {
             runBlocking {
-                definition.executeMethod.callSuspend(commandBean, *params)
+                suspendCancellableCoroutine<Any?> { cont ->
+                    javaMethod.invoke(commandBean, *params, cont)
+                }
             }
         } else {
-            definition.executeMethod.call(commandBean, *params)
+            javaMethod.invoke(commandBean, *params)
         }
+    }
+
+    private fun zeroValue(type: KClass<*>): Any = when (type) {
+        String::class  -> ""
+        Int::class     -> 0
+        Long::class    -> 0L
+        Double::class  -> 0.0
+        Float::class   -> 0f
+        Boolean::class -> false
+        else           -> ""
     }
 }

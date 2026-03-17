@@ -65,21 +65,32 @@ class NexusContext private constructor(
          * If [commandRegistry] is provided, also discovers @Command classes,
          * validates them, creates adapters, and registers them with Hytale.
          *
+         * If [externalBeans] is provided, those instances are registered into the context
+         * before config loading and component scanning occur. This allows external objects
+         * (e.g. a database Storage instance that must be built before Nexus starts) to be
+         * injected into scanned components and commands as normal dependencies.
+         *
          * @param basePackage Base package to scan for components
          * @param classLoader The classloader to scan (required — typically the plugin's classloader)
          * @param configDirectory Directory for config files (enables @ConfigFile auto-discovery)
          * @param commandRegistry Hytale's CommandRegistry (enables @Command auto-discovery and registration)
          * @param contextName Name for the context (used in thread names and coroutine debugging)
+         * @param externalBeans Pre-built instances to register before scanning (name → instance pairs)
          */
         fun create(
             basePackage: String,
             classLoader: ClassLoader,
             configDirectory: Path? = null,
             commandRegistry: HytaleCommandRegistry? = null,
-            contextName: String = "nexus"
+            contextName: String = "nexus",
+            externalBeans: Map<String, Any> = emptyMap()
         ): NexusContext {
             val context = NexusContext(classLoader, contextName)
             context.registerCoroutineBeans()
+            for ((name, instance) in externalBeans) {
+                @Suppress("UNCHECKED_CAST")
+                context.registerBean(name, instance::class as KClass<Any>, instance)
+            }
             if (configDirectory != null) {
                 context.loadAndRegisterConfigs(basePackage, classLoader, configDirectory)
             }

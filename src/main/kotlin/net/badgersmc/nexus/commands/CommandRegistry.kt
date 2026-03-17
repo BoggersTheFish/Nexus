@@ -60,8 +60,12 @@ class CommandRegistry(
      * Register a single command definition.
      */
     private fun registerCommand(definition: CommandDefinition) {
-        // Create command bean with dependency injection
-        val commandBean = beanFactory.getBean(definition.commandClass)
+        // Create command bean with dependency injection.
+        // Command classes carry @Command, not @Service/@Component, so they are never
+        // registered as bean definitions in the container. Build a factory directly
+        // from the class — this resolves constructor parameters from the container
+        // the same way any other bean would be wired.
+        val commandBean = beanFactory.createFactory(definition.commandClass).invoke()
 
         // Create appropriate adapter based on command type
         val adapter = createAdapter(definition, commandBean)

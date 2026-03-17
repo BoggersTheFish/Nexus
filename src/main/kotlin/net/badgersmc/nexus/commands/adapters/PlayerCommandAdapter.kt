@@ -10,12 +10,14 @@ import com.hypixel.hytale.component.Store
 import com.hypixel.hytale.server.core.permissions.HytalePermissions
 import com.hypixel.hytale.server.core.universe.world.World
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
 import net.badgersmc.nexus.commands.CommandDefinition
 import net.badgersmc.nexus.commands.CommandException
 import net.badgersmc.nexus.commands.arguments.ArgumentResolvers
-import org.slf4j.LoggerFactory
+import java.lang.reflect.Method
 import javax.annotation.Nonnull
-import kotlin.reflect.full.callSuspend
+import kotlin.reflect.KClass
+import kotlin.reflect.jvm.javaMethod
 
 /**
  * Adapter for player commands (AbstractPlayerCommand).
@@ -42,8 +44,10 @@ class PlayerCommandAdapter(
     definition.annotation.description
 ) {
 
-    private val logger = LoggerFactory.getLogger(PlayerCommandAdapter::class.java)
     private val arguments = mutableListOf<Any>()
+    private val isSuspend = definition.executeMethod.isSuspend
+    private val javaMethod: Method = definition.executeMethod.javaMethod
+        ?: throw CommandException("Could not get Java method for command '${definition.annotation.name}'")
 
     init {
         // Create Hytale arguments for each @Arg parameter
@@ -78,8 +82,6 @@ class PlayerCommandAdapter(
             addAliases(*definition.annotation.aliases)
         }
 
-        logger.debug("Created PlayerCommandAdapter for command '{}' with {} arguments",
-            definition.annotation.name, arguments.size)
     }
 
     override fun execute(
@@ -93,7 +95,8 @@ class PlayerCommandAdapter(
             val params = buildParameterArray(context, store, ref, playerRef, world)
             invokeExecuteMethod(params)
         } catch (e: Exception) {
-            logger.error("Command '{}' execution failed", definition.annotation.name, e)
+            println("[HyCore] Command '${definition.annotation.name}' execution failed: ${e.message}")
+            e.printStackTrace()
             context.sendMessage(Message.raw("§cCommand failed: ${e.message ?: "Unknown error"}"))
         }
     }
@@ -114,10 +117,10 @@ class PlayerCommandAdapter(
         for (param in definition.parameters) {
             params.add(when {
                 param.isArg -> {
-                    // Extract argument value from context
                     val arg = arguments[argIndex++]
                     val method = arg::class.java.getMethod("get", CommandContext::class.java)
-                    method.invoke(arg, context)
+                    val value = method.invoke(arg, context)
+                    value ?: zeroValue(param.type)
                 }
                 param.isContext -> {
                     // Inject context value based on type
@@ -141,15 +144,28 @@ class PlayerCommandAdapter(
     }
 
     /**
-     * Invoke the user's execute() method (handles suspend functions).
+     * Invoke the user's execute() method via Java reflection (avoids KotlinReflectionInternalError
+     * on built-in types like String/Int that Kotlin reflection cannot introspect at runtime).
      */
     private fun invokeExecuteMethod(params: Array<Any?>) {
-        if (definition.executeMethod.isSuspend) {
+        if (isSuspend) {
             runBlocking {
-                definition.executeMethod.callSuspend(commandBean, *params)
+                suspendCancellableCoroutine<Any?> { cont ->
+                    javaMethod.invoke(commandBean, *params, cont)
+                }
             }
         } else {
-            definition.executeMethod.call(commandBean, *params)
+            javaMethod.invoke(commandBean, *params)
         }
+    }
+
+    private fun zeroValue(type: KClass<*>): Any = when (type) {
+        String::class  -> ""
+        Int::class     -> 0
+        Long::class    -> 0L
+        Double::class  -> 0.0
+        Float::class   -> 0f
+        Boolean::class -> false
+        else           -> ""
     }
 }
