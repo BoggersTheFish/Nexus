@@ -16,9 +16,24 @@ class ComponentRegistry {
 
     /**
      * Register a bean definition with the container.
+     * Logs a warning if a bean with the same name already exists (last-write wins).
+     * This allows external beans registered before scanning to be overridden by
+     * scanned components if they share the same name — but warns so it's not silent.
      */
     fun register(definition: BeanDefinition) {
-        definitions[definition.name] = definition
+        val existing = definitions.putIfAbsent(definition.name, definition)
+        if (existing != null) {
+            if (existing.type == definition.type) {
+                // Same type re-registered (e.g. config reload) — safe overwrite
+                definitions[definition.name] = definition
+            } else {
+                throw IllegalArgumentException(
+                    "Duplicate bean name '${definition.name}': " +
+                    "${existing.type.simpleName} would be overwritten by ${definition.type.simpleName}. " +
+                    "Use @Qualifier to disambiguate."
+                )
+            }
+        }
 
         // Index by concrete type for lookup
         typeIndex.computeIfAbsent(definition.type) { mutableListOf() }.add(definition.name)
