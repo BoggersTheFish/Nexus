@@ -1,45 +1,60 @@
-# Nexus - Application Framework for Hytale
+# Nexus — DI Framework for Hytale & Paper
 
-**Nexus** is a Kotlin-first application framework for Hytale mods providing automatic dependency injection with classpath scanning, YAML configuration management, command auto-discovery, and coroutine infrastructure backed by Java 21 virtual threads.
+**Nexus** is a Kotlin-first application framework providing automatic dependency injection with classpath scanning, YAML configuration management, command auto-discovery, and coroutine infrastructure backed by Java 21 virtual threads.
+
+Nexus ships as two modules:
+- **`nexus-core`** — DI container, config system, coroutine infrastructure, and Hytale command adapters
+- **`nexus-paper`** — Paper Brigadier command system, `BukkitDispatcher`, and Paper-specific extensions
 
 ## Features
 
 ### Dependency Injection with Classpath Scanning
 
-- **Automatic Component Discovery**: Annotate classes with `@Component`, `@Service`, or `@Repository` and they're found at startup via [ClassGraph](https://github.com/classgraph/classgraph) - no registration lists to maintain
-- **Constructor Injection**: Dependencies resolved automatically through primary constructors
-- **Lifecycle Management**: `@PostConstruct` and `@PreDestroy` hooks (supports suspend functions)
-- **Scopes**: Singleton (default) and Prototype scopes via `@Scope`
-- **Polymorphic Resolution**: Beans resolved by interface or superclass type
-- **Qualifier Support**: `@Qualifier("name")` to disambiguate multiple beans of the same type
-- **Thread-safe**: Concurrent access with double-check locking for singletons
+- **Automatic component discovery** — `@Component`, `@Service`, `@Repository` found at startup via [ClassGraph](https://github.com/classgraph/classgraph)
+- **Constructor injection** — dependencies resolved automatically through primary constructors
+- **Lifecycle management** — `@PostConstruct` and `@PreDestroy` hooks (supports suspend functions)
+- **Scopes** — Singleton (default) and Prototype via `@Scope`
+- **Polymorphic resolution** — beans resolved by interface or superclass type
+- **Qualifier support** — `@Qualifier("name")` to disambiguate multiple beans of the same type
+- **External beans** — pre-built instances registered via `externalBeans` map before scanning
+- **Thread-safe** — concurrent access with double-check locking for singletons
 
 ### Coroutine Infrastructure
 
-- **Virtual Thread Dispatchers**: Java 21 virtual threads with automatic classloader propagation
-- **Per-Plugin Scopes**: Each plugin gets its own `CoroutineScope` with `SupervisorJob`
-- **Injectable**: Scope and dispatchers are auto-registered as beans
-- **Lifecycle-Managed**: Scopes cancelled automatically on context shutdown
-- **Shared Utilities**: `withIO` and `withDefault` dispatcher helpers
+- **Virtual thread dispatchers** — Java 21 virtual threads with automatic classloader propagation
+- **Per-plugin scopes** — each plugin gets its own `CoroutineScope` with `SupervisorJob`
+- **Injectable** — scope and dispatchers auto-registered as beans
+- **Lifecycle-managed** — scopes cancelled automatically on context shutdown
+- **Shared utilities** — `withIO` and `withDefault` dispatcher helpers
 
 ### Configuration System
 
-- **Auto-Discovery**: `@ConfigFile` classes found by classpath scanning, loaded, and registered as injectable beans
-- **YAML Format**: Human-friendly config files with comment preservation
-- **Annotation-based**: `@ConfigFile`, `@ConfigName`, `@Comment`, `@Transient`
-- **Type-safe Loading**: Automatic type conversion for primitives, collections, nested objects
-- **Hot Reload**: Reload configs at runtime without restarting
-- **Centralized Management**: `ConfigManager` for loading, saving, and caching all configs
+- **Auto-discovery** — `@ConfigFile` classes found by classpath scanning, loaded, and registered as injectable beans
+- **YAML format** — human-friendly config files with comment preservation
+- **Annotation-based** — `@ConfigFile`, `@ConfigName`, `@Comment`, `@Transient`
+- **Type-safe loading** — automatic type conversion for primitives, collections, nested objects
+- **Hot reload** — reload configs at runtime without restarting
+- **Centralized management** — `ConfigManager` for loading, saving, and caching all configs
 
-### Command Auto-Discovery (Beta)
+### Command System — Hytale (nexus-core)
 
-- **Annotation-based Commands**: `@Command` classes with `@Arg` parameters auto-discovered
-- **Type-safe Arguments**: Map Kotlin types to Hytale arguments via `ArgumentResolver`
-- **Dependency Injection**: Commands can inject services, configs, and other beans
-- **Fail-fast Validation**: Missing argument resolvers detected at startup, not runtime
-- **Suspend Support**: Command execute methods can be suspend functions
-- **Context Injection**: `@Context` parameters for CommandContext, World, Store, etc.
-- **Status**: AsyncCommand ✅ | PlayerCommand ✅ | TargetPlayerCommand ✅ | TargetEntityCommand ✅
+- **Annotation-based** — `@Command` classes with `@Arg` parameters auto-discovered
+- **Type-safe arguments** — map Kotlin types to Hytale arguments via `ArgumentResolver`
+- **Adapters** — AsyncCommand, PlayerCommand, TargetPlayerCommand, TargetEntityCommand
+- **Suspend support** — command execute methods can be suspend functions
+- **Context injection** — `@Context` parameters for CommandContext, World, Store, etc.
+
+### Command System — Paper Brigadier (nexus-paper)
+
+- **`@Command` + `@Subcommand`** — single command class with multiple subcommand methods
+- **Paper Brigadier integration** — builds Mojang `LiteralCommandNode` trees automatically
+- **Multi-arg support** — bottom-up Brigadier node construction (handles `then()` build semantics correctly)
+- **`@Arg` type resolution** — built-in resolvers for String, Int, Double, Float, Boolean, Player
+- **`@Context` injection** — Player, CommandSender, CommandSourceStack, Server
+- **`@Permission`** — per-subcommand permission checks
+- **`@PlayerOnly`** — restrict subcommands to player senders
+- **`@Async`** — run subcommands on coroutine scope instead of main thread
+- **`BukkitDispatcher`** — coroutine dispatcher that runs on Paper's main thread (skips dispatch when already on main thread)
 
 ## Quick Start
 
@@ -47,7 +62,11 @@
 
 ```kotlin
 dependencies {
-    implementation("net.badgersmc:nexus:1.5.0")
+    // Core DI + config + coroutines
+    implementation("net.badgersmc:nexus-core:1.5.3")
+
+    // Paper command system + BukkitDispatcher (optional)
+    implementation("net.badgersmc:nexus-paper:1.5.3")
 }
 ```
 
@@ -55,8 +74,8 @@ dependencies {
 
 ```kotlin
 @Repository
-class PlayerRepository(private val storage: Storage) {
-    suspend fun findPlayer(id: UUID): Player? = withIO {
+class PlayerRepository(private val database: Database) {
+    suspend fun findPlayer(id: UUID): PlayerStats? = withIO {
         // database query
     }
 }
@@ -68,7 +87,7 @@ class PlayerService(private val repository: PlayerRepository) {
         println("PlayerService initialized!")
     }
 
-    suspend fun getPlayer(id: UUID): Player? {
+    suspend fun getPlayer(id: UUID): PlayerStats? {
         return repository.findPlayer(id)
     }
 }
@@ -77,129 +96,101 @@ class PlayerService(private val repository: PlayerRepository) {
 ### 3. Create a Nexus context
 
 ```kotlin
-// Nexus scans net.example.mymod and all sub-packages for annotated classes.
-// Passing configDirectory enables automatic @ConfigFile discovery and loading.
-// Passing commandRegistry enables automatic @Command discovery and registration.
-val context = NexusContext.create(
-    basePackage = "net.example.mymod",
+val nexus = NexusContext.create(
+    basePackage = "net.example.myplugin",
     classLoader = this::class.java.classLoader,
     configDirectory = dataDirectory,
-    commandRegistry = this.commandRegistry,  // Hytale's CommandRegistry
-    contextName = "MyPlugin"
+    contextName = "MyPlugin",
+    externalBeans = mapOf(
+        "plugin" to this,
+        "database" to database
+    )
 )
 
-// Register any beans created outside the container
-context.registerBean("storage", Storage::class, storage)
+// Retrieve auto-discovered beans
+val playerService = nexus.getBean<PlayerService>()
+val config = nexus.getBean<MyPluginConfig>()
 
-// Retrieve auto-discovered beans — configs and commands are injectable too
-val playerService = context.getBean<PlayerService>()
-val config = context.getBean<MyModConfig>()
-
-// Cleanup when done
-context.close()
+// Cleanup on disable
+nexus.close()
 ```
 
-That's it. Add a new `@Service`, `@Repository`, or `@ConfigFile` class anywhere under your base package and it's automatically available for injection on next startup.
-
-## Coroutine Infrastructure
-
-Nexus provides centralized coroutine support backed by Java 21 virtual threads. When you pass a `classLoader` to `NexusContext.create()`, Nexus automatically creates a virtual thread executor, coroutine dispatcher, and plugin-scoped `CoroutineScope`.
-
-### Why this matters
-
-Java 21 virtual threads inherit the system classloader, not the plugin's. When a coroutine continuation tries to load a plugin class on a virtual thread, it fails. Nexus wraps every virtual thread task to propagate the correct classloader automatically.
-
-### Launching coroutines
+### 4. Register Paper commands (optional)
 
 ```kotlin
-// Launch coroutines on virtual threads with correct classloader
-context.scope!!.launch {
-    val data = withIO { database.query("SELECT ...") }
-    processData(data)
+// In onEnable(), after creating the NexusContext:
+nexus.registerPaperCommands(
+    basePackage = "net.example.myplugin",
+    classLoader = this::class.java.classLoader,
+    plugin = this
+)
+```
+
+## Paper Commands
+
+Define a single `@Command` class with `@Subcommand` methods:
+
+```kotlin
+@Command(name = "sg", description = "Survival Games", permission = "sg.use")
+class SGCommand(
+    private val gameManager: GameManager,  // DI works!
+    private val config: GameConfig
+) {
+    @Subcommand("join")
+    @PlayerOnly
+    fun join(@Context player: Player, @Arg("arena") arena: String) {
+        gameManager.joinGame(player, arena)
+    }
+
+    @Subcommand("create")
+    @Permission("sg.admin")
+    fun create(
+        @Context player: Player,
+        @Arg("name") name: String,
+        @Arg("radius") radius: Int  // multi-arg commands work correctly
+    ) {
+        gameManager.createArena(player, name, radius)
+    }
+
+    @Subcommand("stats")
+    @Async
+    suspend fun stats(@Context player: Player, @Arg("target") target: Player) {
+        val stats = statsService.getStats(target)
+        player.sendMessage(stats.format())
+    }
 }
 ```
 
-### Injecting the scope into components
+### Supported Paper @Context types
 
-The `CoroutineScope` and `NexusDispatchers` are registered as beans, so any component can receive them via constructor injection:
+| Type | Description |
+|---|---|
+| `Player` | The player who ran the command |
+| `CommandSender` | Generic sender (player or console) |
+| `CommandSourceStack` | Paper's raw command source |
+| `Server` | The server instance |
+
+### BukkitDispatcher
+
+Run coroutines on the Paper main thread:
 
 ```kotlin
 @Service
-class MyService(private val scope: CoroutineScope) {
-    fun doAsyncWork() {
-        scope.launch {
-            // runs on virtual threads with correct classloader
+class MyService(private val bukkitDispatcher: BukkitDispatcher) {
+    suspend fun doMainThreadWork() {
+        withContext(bukkitDispatcher) {
+            // Safe to call Bukkit API here
+            player.teleport(location)
         }
     }
 }
 ```
 
-### Suspend lifecycle methods
+`BukkitDispatcher` skips dispatch when already on the main thread — no scheduling overhead.
 
-`@PostConstruct` and `@PreDestroy` methods can be suspend functions:
+## Hytale Commands
 
-```kotlin
-@Service
-class CacheService {
-    @PostConstruct
-    suspend fun warmUp() {
-        // async initialization
-    }
-
-    @PreDestroy
-    suspend fun flush() {
-        // async cleanup
-    }
-}
-```
-
-### Shutdown lifecycle
-
-When `context.close()` is called, Nexus shuts down in order:
-
-1. Cancel the coroutine scope (stops all running coroutines)
-2. Invoke `@PreDestroy` on all singletons
-3. Shutdown the virtual thread executor
-4. Clear the bean registry
-
-## Command System (Beta)
-
-Nexus automatically discovers `@Command` annotated classes and registers them with Hytale's command system. Commands support dependency injection, type-safe arguments, and suspend functions.
-
-**Current Status:**
-- ✅ **AsyncCommand** - Background tasks (no world/entity access)
-- ✅ **PlayerCommand** - World-thread commands with full ECS access
-- ✅ **TargetPlayerCommand** - Adds optional `--player` arg, runs on world thread
-- ✅ **TargetEntityCommand** - Raycasts to find entities in view, runs on world thread
-
-### Define a command
-
-```kotlin
-@Command(
-    name = "heal",
-    description = "Heal a player",
-    permission = "admin.heal",
-    type = CommandType.PLAYER
-)
-class HealCommand(
-    private val healthService: HealthService  // DI works!
-) {
-    fun execute(
-        @Context context: CommandContext,
-        @Context world: World,
-        @Context store: Store<EntityStore>,
-        @Context ref: Ref<EntityStore>,
-        @Arg("amount", "Amount of health to restore", required = false, defaultValue = "20") amount: Int
-    ) {
-        healthService.heal(store, ref, amount)
-        context.sendMessage(Message.raw("Healed for $amount HP"))
-    }
-}
-```
-
-### Automatic discovery
-
-When you pass `commandRegistry` to `NexusContext.create()`, Nexus scans for all `@Command`-annotated classes, validates them, creates instances with dependency injection, and registers them with Hytale:
+For Hytale mods, pass `commandRegistry` to `NexusContext.create()`:
 
 ```kotlin
 val context = NexusContext.create(
@@ -209,113 +200,37 @@ val context = NexusContext.create(
 )
 ```
 
-### Async commands
-
-Async commands run on a background thread and have no access to world/entity state. They're perfect for commands that don't need game data (help, rules, backups):
+### Define a Hytale command
 
 ```kotlin
 @Command(
-    name = "backup",
-    description = "Backup the server",
-    permission = "admin.backup",
-    type = CommandType.ASYNC
-)
-class BackupCommand(
-    private val backupService: BackupService
-) {
-    suspend fun execute(
-        @Context context: CommandContext,
-        @Arg("world", "World to backup") worldName: String
-    ) {
-        context.sendMessage(Message.raw("Starting backup of $worldName..."))
-        backupService.backupWorld(worldName)
-        context.sendMessage(Message.raw("Backup complete!"))
-    }
-}
-```
-
-### Player commands
-
-Player commands run on the world thread and have full access to the Entity Component System:
-
-```kotlin
-@Command(
-    name = "settime",
-    description = "Set the world time",
-    permission = "admin.time",
+    name = "heal",
+    description = "Heal a player",
+    permission = "admin.heal",
     type = CommandType.PLAYER
 )
-class SetTimeCommand {
+class HealCommand(private val healthService: HealthService) {
     fun execute(
         @Context context: CommandContext,
         @Context world: World,
-        @Arg("time", "Time of day (0-24000)") time: Int
+        @Context store: Store<EntityStore>,
+        @Context ref: Ref<EntityStore>,
+        @Arg("amount", "Amount of health", required = false, defaultValue = "20") amount: Int
     ) {
-        world.setTime(time)
-        context.sendMessage(Message.raw("Time set to $time"))
+        healthService.heal(store, ref, amount)
+        context.sendMessage(Message.raw("Healed for $amount HP"))
     }
 }
 ```
 
-### Custom argument types
+### Hytale command types
 
-Register custom `ArgumentResolver` implementations before creating the context:
-
-```kotlin
-object PlayerArgumentResolver : ArgumentResolver<Player> {
-    override val type = Player::class
-
-    override fun createRequiredArg(command: Any, name: String, description: String): Any {
-        return (command as AbstractCommand).withRequiredArg(name, description, ArgTypes.PLAYER)
-    }
-
-    override fun createOptionalArg(command: Any, name: String, description: String): Any {
-        return (command as AbstractCommand).withOptionalArg(name, description, ArgTypes.PLAYER)
-    }
-
-    override fun createDefaultArg(command: Any, name: String, description: String, defaultValue: String): Any {
-        return (command as AbstractCommand).withDefaultArg(name, description, defaultValue, ArgTypes.PLAYER)
-    }
-}
-
-// Register before creating context
-ArgumentResolvers.register(Player::class, PlayerArgumentResolver)
-
-val context = NexusContext.create(
-    basePackage = "net.example.mymod",
-    classLoader = this::class.java.classLoader,
-    commandRegistry = this.commandRegistry
-)
-```
-
-### Supported @Context types
-
-| Command Type | Supported Context Parameters |
-|---|---|
-| `CommandType.ASYNC` | `CommandContext` |
-| `CommandType.PLAYER` | `CommandContext`, `World`, `Store<EntityStore>`, `PlayerRef`, `Ref<EntityStore>` |
-| `CommandType.TARGET_PLAYER` | `CommandContext`, `World`, `Store<EntityStore>`, `PlayerRef`, `Ref<EntityStore>` (target player's ref) |
-| `CommandType.TARGET_ENTITY` | `CommandContext`, `World`, `Store<EntityStore>`, `ObjectList<Ref<EntityStore>>` (entities in view) |
-
-### Built-in argument types
-
-Nexus provides resolvers for these Kotlin types out of the box:
-- `String`
-- `Int`
-- `Double`
-- `Float`
-- `Boolean`
-
-### Validation
-
-Command scanning performs fail-fast validation at startup:
-- ✅ Verifies `execute()` method exists
-- ✅ Checks all `@Arg` types have registered `ArgumentResolver`
-- ✅ Validates required arguments come before optional arguments
-- ✅ Ensures `@Context` parameters are supported types for the command type
-- ✅ Detects duplicate command names
-
-If validation fails, `NexusContext.create()` throws `CommandException` with a detailed error message.
+| Type | Thread | Context Parameters |
+|---|---|---|
+| `ASYNC` | Background | `CommandContext` |
+| `PLAYER` | World thread | `CommandContext`, `World`, `Store<EntityStore>`, `PlayerRef`, `Ref<EntityStore>` |
+| `TARGET_PLAYER` | World thread | Same as PLAYER (target player's ref) |
+| `TARGET_ENTITY` | World thread | `CommandContext`, `World`, `Store<EntityStore>`, `ObjectList<Ref<EntityStore>>` |
 
 ## Configuration System
 
@@ -342,44 +257,6 @@ class MyModConfig {
 }
 ```
 
-### Automatic discovery (recommended)
-
-When you pass `configDirectory` to `NexusContext.create()`, Nexus scans for all `@ConfigFile`-annotated classes, loads them (creating YAML files with defaults if missing), and registers them as singleton beans. Services can then inject configs directly:
-
-```kotlin
-@Service
-class GameService(private val config: MyModConfig) {
-    fun getMaxPlayers() = config.maxPlayers
-}
-```
-
-A `ConfigManager` bean is also registered automatically, so any service can inject it for runtime reloads:
-
-```kotlin
-@Service
-class AdminService(private val configManager: ConfigManager) {
-    fun reloadAll() = configManager.reloadAll()
-}
-```
-
-### Manual usage
-
-If you need config management without classpath scanning:
-
-```kotlin
-val configManager = ConfigManager(dataDirectory)
-
-// Load config (creates mymod.yaml with defaults if missing)
-val config = configManager.load<MyModConfig>()
-
-// Modify and save
-config.debug = true
-configManager.save(config)
-
-// Reload from disk
-configManager.reload<MyModConfig>()
-```
-
 ### Generated YAML
 
 ```yaml
@@ -397,78 +274,165 @@ database:
   port: 3306
 ```
 
+### Injecting configs
+
+```kotlin
+@Service
+class GameService(private val config: MyModConfig) {
+    fun getMaxPlayers() = config.maxPlayers
+}
+
+@Service
+class AdminService(private val configManager: ConfigManager) {
+    fun reloadAll() = configManager.reloadAll()
+}
+```
+
+## Coroutine Infrastructure
+
+Nexus provides centralized coroutine support backed by Java 21 virtual threads. When you pass a `classLoader` to `NexusContext.create()`, Nexus automatically creates a virtual thread executor, coroutine dispatcher, and plugin-scoped `CoroutineScope`.
+
+### Why this matters
+
+Java 21 virtual threads inherit the system classloader, not the plugin's. When a coroutine continuation tries to load a plugin class on a virtual thread, it fails. Nexus wraps every virtual thread task to propagate the correct classloader automatically.
+
+### Injecting the scope
+
+```kotlin
+@Service
+class MyService(private val scope: CoroutineScope) {
+    fun doAsyncWork() {
+        scope.launch {
+            // runs on virtual threads with correct classloader
+        }
+    }
+}
+```
+
+### Suspend lifecycle methods
+
+`@PostConstruct` and `@PreDestroy` methods can be suspend functions:
+
+```kotlin
+@Service
+class CacheService {
+    @PostConstruct
+    suspend fun warmUp() { /* async initialization */ }
+
+    @PreDestroy
+    suspend fun flush() { /* async cleanup */ }
+}
+```
+
+### Shutdown lifecycle
+
+When `context.close()` is called:
+
+1. Cancel the coroutine scope (stops all running coroutines)
+2. Invoke `@PreDestroy` on all singletons
+3. Shutdown the virtual thread executor
+4. Clear the bean registry
+
 ## Annotations Reference
 
 ### Component Discovery
 
-| Annotation | Target | Description |
-|---|---|---|
-| `@Component` | Class | Generic managed component |
-| `@Service` | Class | Service layer component |
-| `@Repository` | Class | Data access layer component |
+| Annotation | Description |
+|---|---|
+| `@Component` | Generic managed component |
+| `@Service` | Service layer component |
+| `@Repository` | Data access layer component |
 
 ### Dependency Injection
 
-| Annotation | Target | Description |
-|---|---|---|
-| `@Inject` | Constructor, field, param | Mark injection points (optional for constructors) |
-| `@Qualifier("name")` | Parameter | Disambiguate between multiple beans of same type |
+| Annotation | Description |
+|---|---|
+| `@Inject` | Mark injection points (optional for constructors) |
+| `@Qualifier("name")` | Disambiguate between multiple beans of same type |
 
 ### Lifecycle
 
-| Annotation | Target | Description |
-|---|---|---|
-| `@PostConstruct` | Function | Called after dependency injection (supports suspend) |
-| `@PreDestroy` | Function | Called before container shutdown (supports suspend) |
-| `@Scope(ScopeType)` | Class | SINGLETON (default) or PROTOTYPE |
+| Annotation | Description |
+|---|---|
+| `@PostConstruct` | Called after DI (supports suspend) |
+| `@PreDestroy` | Called before shutdown (supports suspend) |
+| `@Scope(ScopeType)` | SINGLETON (default) or PROTOTYPE |
 
 ### Configuration
 
-| Annotation | Target | Description |
-|---|---|---|
-| `@ConfigFile("name")` | Class | Maps class to `name.yaml` |
-| `@ConfigName("key")` | Property | Custom YAML key name |
-| `@Comment("text")` | Class, property | YAML comment above the field |
-| `@Transient` | Property | Excluded from save/load |
+| Annotation | Description |
+|---|---|
+| `@ConfigFile("name")` | Maps class to `name.yaml` |
+| `@ConfigName("key")` | Custom YAML key name |
+| `@Comment("text")` | YAML comment above the field |
+| `@Transient` | Excluded from save/load |
 
-### Commands (Beta)
+### Commands (Hytale)
 
-| Annotation | Target | Description |
-|---|---|---|
-| `@Command(...)` | Class | Marks a command class with metadata (name, description, permission, aliases, type) |
-| `@Arg("name", ...)` | Parameter | Marks a parameter as a user-provided argument |
-| `@Context` | Parameter | Marks a parameter for runtime injection (CommandContext, World, Store, etc.) |
+| Annotation | Description |
+|---|---|
+| `@Command(...)` | Command class with metadata (name, description, permission, aliases, type) |
+| `@Arg("name", ...)` | User-provided argument |
+| `@Context` | Runtime injection (CommandContext, World, Store, etc.) |
 
-## Advanced Usage
+### Commands (Paper)
 
-### Manual bean registration
+| Annotation | Description |
+|---|---|
+| `@Command(...)` | Root command with name, description, permission |
+| `@Subcommand("path")` | Subcommand method (space-separated path, e.g. `"admin setup"`) |
+| `@Arg("name")` | Brigadier argument with auto-resolved type |
+| `@Context` | Runtime injection (Player, CommandSender, CommandSourceStack, Server) |
+| `@Permission("node")` | Per-subcommand permission |
+| `@PlayerOnly` | Restrict to player senders |
+| `@Async` | Run on coroutine scope instead of main thread |
 
-For beans created outside the container (database connections, plugin instances):
+## Architecture
 
-```kotlin
-val context = NexusContext.create(
-    basePackage = "net.example.mymod",
-    classLoader = this::class.java.classLoader,
-    configDirectory = dataDirectory
-)
+```
+nexus-core/
+├── core/
+│   ├── NexusContext          Main container — lifecycle, bean management
+│   ├── ComponentRegistry     Bean definitions + singleton cache
+│   ├── BeanFactory           Constructor injection, lifecycle hooks
+│   └── BeanDefinition        Bean metadata (name, type, scope, factory)
+├── scanning/
+│   └── ComponentScanner      ClassGraph-based classpath scanning
+├── annotations/              @Component, @Service, @Repository, @Inject, etc.
+├── coroutines/
+│   ├── NexusDispatchers      Virtual thread executor + classloader propagation
+│   ├── NexusScope            Per-plugin CoroutineScope with SupervisorJob
+│   └── CoroutineExtensions   withIO, withDefault helpers
+├── config/
+│   ├── ConfigManager         Centralized config loading, saving, caching
+│   ├── ConfigLoader          YAML serialization with reflection
+│   └── Annotations           @ConfigFile, @ConfigName, @Comment, @Transient
+└── commands/                 Hytale command adapters
+    ├── CommandScanner         ClassGraph-based command discovery
+    ├── CommandRegistry        Bridges to Hytale's CommandRegistry
+    └── adapters/              Async, Player, TargetPlayer, TargetEntity
 
-// These are available for injection into scanned components
-context.registerBean("storage", Storage::class, storage)
-context.registerBean("plugin", MyPlugin::class, this)
+nexus-paper/
+├── BukkitDispatcher           Main-thread coroutine dispatcher
+├── PaperNexusExtensions       registerPaperCommands() extension
+└── commands/
+    ├── PaperCommandScanner    Scans @Command + @Subcommand methods
+    ├── PaperCommandRegistry   Builds Brigadier trees, registers with Paper
+    ├── PaperCommandDefinition Metadata for scanned commands
+    ├── annotations/           @Subcommand, @Permission, @PlayerOnly, @Async
+    └── arguments/
+        ├── PaperArgumentResolver   Interface for type → Brigadier arg mapping
+        └── PaperArgumentResolvers  Registry (String, Int, Double, Float, Boolean, Player)
 ```
 
-Bean factories use lazy resolution, so manually registered beans are available even when registered after `create()`. Note that `@ConfigFile` classes no longer need manual registration — they're discovered and loaded automatically when `configDirectory` is provided.
+## Requirements
 
-### Manual-only mode
+- Java 21+ (for virtual threads)
+- Kotlin 2.0+
+- **Hytale commands**: Hytale Server API
+- **Paper commands**: Paper 1.21.1+
 
-If you don't need classpath scanning:
-
-```kotlin
-val context = NexusContext.create()
-context.registerBean("myBean", MyBean::class, MyBean())
-```
-
-### Shadow JAR relocation
+## Shadow JAR Relocation
 
 When shading Nexus into your plugin, relocate ClassGraph as well:
 
@@ -480,50 +444,6 @@ tasks.shadowJar {
 }
 ```
 
-## Architecture
-
-```
-nexus/
-├── core/
-│   ├── NexusContext          Main container — creates context, manages lifecycle
-│   ├── ComponentRegistry     Bean definitions + singleton cache, polymorphic type indexing
-│   ├── BeanFactory           Constructor injection, PostConstruct/PreDestroy invocation
-│   └── BeanDefinition        Bean metadata (name, type, scope, factory)
-├── scanning/
-│   └── ComponentScanner      ClassGraph-based classpath scanning
-├── annotations/
-│   ├── @Component, @Service, @Repository
-│   ├── @Inject, @Qualifier, @Scope
-│   └── @PostConstruct, @PreDestroy
-├── coroutines/
-│   ├── NexusDispatchers      Virtual thread executor + classloader propagation
-│   ├── NexusScope            Per-plugin CoroutineScope with SupervisorJob
-│   └── CoroutineExtensions   withIO, withDefault helpers
-├── config/
-│   ├── ConfigManager          Centralized config loading, saving, caching
-│   ├── ConfigLoader           YAML serialization with reflection
-│   └── @ConfigFile, @ConfigName, @Comment, @Transient
-└── commands/ (Beta)
-    ├── CommandScanner         ClassGraph-based command discovery
-    ├── CommandRegistry        Bridges to Hytale's CommandRegistry
-    ├── CommandDefinition      Command metadata (annotation, execute method, parameters)
-    ├── @Command, @Arg, @Context
-    ├── adapters/
-    │   ├── AsyncCommandAdapter        ✅ Working
-    │   ├── PlayerCommandAdapter       ✅ Working
-    │   ├── TargetPlayerCommandAdapter ✅ Working
-    │   └── TargetEntityCommandAdapter ✅ Working
-    └── arguments/
-        ├── ArgumentResolver       Interface for type → Hytale arg mapping
-        ├── ArgumentResolvers      Registry of resolvers
-        └── BuiltInResolvers       String, Int, Double, Float, Boolean
-```
-
-## Requirements
-
-- Java 21+ (for virtual threads)
-- Kotlin 2.0+
-
 ## License
 
-MIT License - See LICENSE file for details
+MIT License — see LICENSE file for details.
