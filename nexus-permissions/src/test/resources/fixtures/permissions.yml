@@ -1,0 +1,10 @@
+foo.admin:
+  default: op
+  description: Admin root
+  children:
+  - foo.admin.import
+  - foo.admin.reload
+foo.admin.import:
+  default: not op
+foo.admin.reload:
+  default: op

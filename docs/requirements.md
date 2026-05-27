@@ -86,6 +86,28 @@ strikethrough) so historic IDs are not reused.
 
 ---
 
+## Permissions (Phase 4)
+
+### REQ-200 — Permission tree DSL grammar
+**Ubiquitous.** THE SYSTEM SHALL expose a `permissionTree { node(name, default, description) { child(name, default, description) } }` Kotlin DSL building an in-memory tree of permission nodes where children inherit their parent's dotted-name prefix when omitted.
+
+### REQ-201 — Default value mapping
+**Ubiquitous.** THE SYSTEM SHALL accept a `Default` enum with values `OP`, `NOT_OP`, `TRUE`, and `FALSE` on every node, mapping each one-to-one to the matching Bukkit `PermissionDefault` string (`op`, `not op`, `true`, `false`) at serialization time.
+
+### REQ-202 — YAML serialization matches paper-plugin.yml schema
+**Ubiquitous.** THE SYSTEM SHALL serialize a permission tree into a YAML map whose top-level keys are fully-qualified node names, each value carrying `default` and optional `description` and `children` keys, matching the Paper `paper-plugin.yml` `permissions:` schema.
+
+### REQ-203 — Gradle task emits permissions block during build
+**Event-driven.** WHEN the consumer build runs `processResources` THE SYSTEM SHALL execute the `generateNexusPermissions` task immediately after, writing the serialized permission tree into the merged `paper-plugin.yml` before `shadowJar` runs.
+
+### REQ-204 — Merge preserves other top-level keys
+**Ubiquitous.** THE SYSTEM SHALL replace only the `permissions:` key of the consumer's `paper-plugin.yml`, leaving `name`, `main`, `api-version`, `dependencies`, `authors`, and every other top-level key byte-identical to the source file.
+
+### REQ-205 — Idempotent re-runs
+**Event-driven.** WHEN `generateNexusPermissions` runs twice in succession against an unchanged DSL THE SYSTEM SHALL produce a byte-identical `paper-plugin.yml` on the second run.
+
+---
+
 ## Paper GUI (Phase 3)
 
 ### REQ-150 — ItemBuilder DSL
@@ -125,7 +147,7 @@ strikethrough) so historic IDs are not reused.
 **Event-driven.** WHEN NexusScheduler.cancelAll() is called THE SYSTEM SHALL cancel every task previously registered and not yet closed.
 
 ### REQ-132 — Thread guards
-**Unwanted.** IF requireMainThread is called from a non-primary thread THE SYSTEM SHALL throw IllegalStateException. IF requireAsyncThread is called from the primary thread THE SYSTEM SHALL throw IllegalStateException.
+**Unwanted.** IF requireMainThread or requireAsyncThread is called from the wrong thread (non-primary for requireMainThread, primary for requireAsyncThread), THEN THE SYSTEM SHALL throw IllegalStateException.
 
 ### REQ-133 — Scheduler swallows task exceptions
 **Ubiquitous.** THE SYSTEM SHALL catch any Throwable thrown by a scheduled action and log it via java.util.logging without re-throwing.

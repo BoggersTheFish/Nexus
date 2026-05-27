@@ -1,0 +1,24 @@
+# Example consumer paper-plugin.yml — comments + blank lines must survive a merge.
+name: ExamplePlugin
+version: '1.0.0'
+main: com.example.ExamplePlugin
+api-version: '1.21'
+authors:
+  - Alice
+  - Bob
+dependencies:
+  server:
+    Vault:
+      load: BEFORE
+      required: false
+permissions:
+  foo.admin:
+    default: op
+    description: Admin root
+    children:
+    - foo.admin.import
+    - foo.admin.reload
+  foo.admin.import:
+    default: not op
+  foo.admin.reload:
+    default: op

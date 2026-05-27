@@ -19,4 +19,6 @@ include("nexus-paper-bedrock")
 include("nexus-paper-listeners")
 include("nexus-vault")
 include("nexus-papi")
+include("nexus-permissions")
+include("nexus-permissions-gradle")
 // Root project is a pure aggregator — no source, no publishable artifact.

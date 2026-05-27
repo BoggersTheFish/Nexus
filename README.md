@@ -20,6 +20,8 @@
 | **`nexus-paper-listeners`** | 2.0.0 | `@Listener` marker + `registerNexusListeners` scanner (auto-registers Bukkit listeners) |
 | **`nexus-vault`** | 2.0.0 | `EconomyProvider` port + `VaultEconomyAdapter` + `VaultHealth` + `VaultDegradedEvent` |
 | **`nexus-papi`** | 2.0.0 | `@PapiExpansion` + `PlaceholderResolver` + auto-registration with PlaceholderAPI |
+| **`nexus-permissions`** | 2.2.0 | Kotlin DSL for permission trees + YAML serializer + `paper-plugin.yml` merger (library) |
+| **`nexus-permissions-gradle`** | 2.2.0 | Gradle plugin: runs the DSL during `processResources`, splices the result into `paper-plugin.yml` before `shadowJar` |
 
 Roadmap and acceptance REQs: see [`docs/roadmap.md`](docs/roadmap.md) and [`docs/requirements.md`](docs/requirements.md).
 
@@ -39,20 +41,20 @@ repositories {
 
 dependencies {
     // Core DI + config + coroutines — always needed
-    implementation("com.github.BadgersMC.Nexus:nexus-core:v2.1.1")
+    implementation("com.github.BadgersMC.Nexus:nexus-core:v2.2.0")
 
     // Pick whichever extras you want:
-    implementation("com.github.BadgersMC.Nexus:nexus-paper:v2.1.1")            // Paper commands
-    implementation("com.github.BadgersMC.Nexus:nexus-resources:v2.1.1")        // Bundled resource extraction
-    implementation("com.github.BadgersMC.Nexus:nexus-i18n:v2.1.1")             // MiniMessage i18n
-    implementation("com.github.BadgersMC.Nexus:nexus-persistence:v2.1.1")      // DB + migrations
-    implementation("com.github.BadgersMC.Nexus:nexus-scheduler:v2.1.1")        // Bukkit scheduler facade
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-gui:v2.1.1")        // IFramework GUIs
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-bedrock:v2.1.1")    // Cumulus / Floodgate
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-listeners:v2.1.1")  // @Listener auto-register
-    implementation("com.github.BadgersMC.Nexus:nexus-vault:v2.1.1")            // Vault economy
-    implementation("com.github.BadgersMC.Nexus:nexus-papi:v2.1.1")             // PlaceholderAPI
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-loader:v2.1.1")     // Shared PluginLoader
+    implementation("com.github.BadgersMC.Nexus:nexus-paper:v2.2.0")            // Paper commands
+    implementation("com.github.BadgersMC.Nexus:nexus-resources:v2.2.0")        // Bundled resource extraction
+    implementation("com.github.BadgersMC.Nexus:nexus-i18n:v2.2.0")             // MiniMessage i18n
+    implementation("com.github.BadgersMC.Nexus:nexus-persistence:v2.2.0")      // DB + migrations
+    implementation("com.github.BadgersMC.Nexus:nexus-scheduler:v2.2.0")        // Bukkit scheduler facade
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-gui:v2.2.0")        // IFramework GUIs
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-bedrock:v2.2.0")    // Cumulus / Floodgate
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-listeners:v2.2.0")  // @Listener auto-register
+    implementation("com.github.BadgersMC.Nexus:nexus-vault:v2.2.0")            // Vault economy
+    implementation("com.github.BadgersMC.Nexus:nexus-papi:v2.2.0")             // PlaceholderAPI
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-loader:v2.2.0")     // Shared PluginLoader
 }
 ```
 
@@ -326,6 +328,73 @@ registerNexusExpansions(basePackage = "net.example.myplugin", classLoader = ...,
 
 Silently no-ops when PlaceholderAPI is not installed.
 
+### `nexus-permissions` + `nexus-permissions-gradle` — Permission tree DSL
+
+Stop hand-maintaining the `permissions:` block of `paper-plugin.yml`. Declare the tree once in `build.gradle.kts`; the Gradle plugin splices it into the staged resource before the jar is packed.
+
+`nexus-permissions-gradle` is the only Nexus module distributed as a **Gradle plugin**, not a library. Plugin Portal submission is deferred for the 2.2 line — wire it via the classic `buildscript { classpath(...) }` form so JitPack resolves it.
+
+```kotlin
+// build.gradle.kts (consumer)
+import net.badgersmc.nexus.permissions.Default
+
+buildscript {
+    repositories {
+        mavenCentral()
+        maven("https://jitpack.io")
+    }
+    dependencies {
+        classpath("com.github.BadgersMC.Nexus:nexus-permissions-gradle:v2.2.0")
+    }
+}
+
+plugins {
+    java
+    kotlin("jvm")
+}
+
+apply(plugin = "net.badgersmc.nexus.permissions")
+
+configure<net.badgersmc.nexus.permissions.gradle.NexusPermissionsExtension> {
+    tree {
+        node("myplugin.admin", default = Default.OP, description = "All admin commands") {
+            child("reload")
+            child("import", default = Default.NOT_OP)
+        }
+        node("myplugin.use", default = Default.TRUE)
+    }
+}
+```
+
+Drop a `src/main/resources/paper-plugin.yml` that contains everything except `permissions:` — the merger fills the rest:
+
+```yaml
+name: MyPlugin
+main: net.example.myplugin.MyPlugin
+api-version: '1.21'
+authors: [BadgersMC]
+```
+
+After `./gradlew classes`, the staged `build/resources/main/paper-plugin.yml` gains:
+
+```yaml
+permissions:
+  myplugin.admin:
+    default: op
+    description: All admin commands
+    children:
+    - myplugin.admin.import
+    - myplugin.admin.reload
+  myplugin.admin.import:
+    default: not op
+  myplugin.admin.reload:
+    default: op
+  myplugin.use:
+    default: true
+```
+
+The generation task auto-fences `shadowJar` when the shadow plugin (`com.gradleup.shadow` or the legacy `com.github.johnrengelman.shadow` id) is applied — no extra wiring needed. Re-running produces a byte-identical file (REQ-205), so the merge plays nicely with reproducible-build setups.
+
 ### `nexus-paper-loader` — Shared `PluginLoader`
 
 ```java
@@ -426,6 +495,18 @@ nexus-papi/                       Phase 4
 ├── PlaceholderResolver
 ├── NexusExpansionAdapter         Bridges Nexus → PAPI's PlaceholderExpansion
 └── ExpansionRegistry             ClassGraph scanner + PAPI register
+
+nexus-permissions/                Phase 4 (pure library)
+├── Default                       OP / NOT_OP / TRUE / FALSE → Bukkit permission defaults
+├── PermissionTree                In-memory tree built by the DSL
+├── permissionTree { … }          Type-safe builder (node / child)
+├── PermissionTreeSerializer      Flat-keyed Paper permissions: YAML
+└── PaperPluginYmlMerger          Range-based splice into existing paper-plugin.yml
+
+nexus-permissions-gradle/         Phase 4 (Gradle plugin)
+├── NexusPermissionsPlugin        Apply-time wiring + lifecycle hooks
+├── NexusPermissionsExtension     nexusPermissions { tree { … } } DSL block
+└── GenerateNexusPermissionsTask  Runs after processResources, before jar / shadowJar
 ```
 
 ## Requirements
@@ -472,7 +553,7 @@ com.github.BadgersMC.Nexus:<module>:<tag>
 ```
 
 - `<module>` matches a sub-project name (`nexus-core`, `nexus-paper-gui`, …)
-- `<tag>` is a release tag, **with the `v` prefix** (e.g. `v2.1.1`) — JitPack uses the tag verbatim
+- `<tag>` is a release tag, **with the `v` prefix** (e.g. `v2.2.0`) — JitPack uses the tag verbatim
 - For a SNAPSHOT off a branch: `com.github.BadgersMC.Nexus:nexus-core:main-SNAPSHOT`
 
 No token required. The first request after a new tag triggers a build (~1–2 minutes); after that it is served from the CDN.
