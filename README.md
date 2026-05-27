@@ -31,19 +31,7 @@ Roadmap and acceptance REQs: see [`docs/roadmap.md`](docs/roadmap.md) and [`docs
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
-
-    // GitHub Packages — Nexus releases live here. Requires a token; see
-    // "Consuming from GitHub Packages" below.
-    maven {
-        name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/BadgersMC/nexus")
-        credentials {
-            username = providers.gradleProperty("gpr.user").orNull
-                ?: System.getenv("GITHUB_ACTOR")
-            password = providers.gradleProperty("gpr.token").orNull
-                ?: System.getenv("GITHUB_TOKEN")
-        }
-    }
+    maven("https://jitpack.io") // Nexus releases — no token required
 
     // Opt-in to local-published snapshots for dev:
     // -PuseMavenLocal=true on the command line
@@ -51,22 +39,24 @@ repositories {
 
 dependencies {
     // Core DI + config + coroutines — always needed
-    implementation("net.badgersmc:nexus-core:2.0.0")
+    implementation("com.github.BadgersMC.Nexus:nexus-core:v2.1.1")
 
     // Pick whichever extras you want:
-    implementation("net.badgersmc:nexus-paper:2.0.0")            // Paper commands
-    implementation("net.badgersmc:nexus-resources:2.0.0")        // Bundled resource extraction
-    implementation("net.badgersmc:nexus-i18n:2.0.0")             // MiniMessage i18n
-    implementation("net.badgersmc:nexus-persistence:2.0.0")      // DB + migrations
-    implementation("net.badgersmc:nexus-scheduler:2.0.0")        // Bukkit scheduler facade
-    implementation("net.badgersmc:nexus-paper-gui:2.0.0")        // IFramework GUIs
-    implementation("net.badgersmc:nexus-paper-bedrock:2.0.0")    // Cumulus / Floodgate
-    implementation("net.badgersmc:nexus-paper-listeners:2.0.0")  // @Listener auto-register
-    implementation("net.badgersmc:nexus-vault:2.0.0")            // Vault economy
-    implementation("net.badgersmc:nexus-papi:2.0.0")             // PlaceholderAPI
-    implementation("net.badgersmc:nexus-paper-loader:2.0.0")     // Shared PluginLoader
+    implementation("com.github.BadgersMC.Nexus:nexus-paper:v2.1.1")            // Paper commands
+    implementation("com.github.BadgersMC.Nexus:nexus-resources:v2.1.1")        // Bundled resource extraction
+    implementation("com.github.BadgersMC.Nexus:nexus-i18n:v2.1.1")             // MiniMessage i18n
+    implementation("com.github.BadgersMC.Nexus:nexus-persistence:v2.1.1")      // DB + migrations
+    implementation("com.github.BadgersMC.Nexus:nexus-scheduler:v2.1.1")        // Bukkit scheduler facade
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-gui:v2.1.1")        // IFramework GUIs
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-bedrock:v2.1.1")    // Cumulus / Floodgate
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-listeners:v2.1.1")  // @Listener auto-register
+    implementation("com.github.BadgersMC.Nexus:nexus-vault:v2.1.1")            // Vault economy
+    implementation("com.github.BadgersMC.Nexus:nexus-papi:v2.1.1")             // PlaceholderAPI
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-loader:v2.1.1")     // Shared PluginLoader
 }
 ```
+
+> JitPack serves the artifacts from this public repo on demand. The runtime package names inside the JARs remain `net.badgersmc.nexus.*` — only the Maven coordinates use the JitPack groupId. If you shadow + relocate, target `net.badgersmc.nexus`.
 
 ### 2. Annotate your classes
 
@@ -471,43 +461,57 @@ tasks.shadowJar {
 }
 ```
 
-## Consuming from GitHub Packages
+## Consuming Nexus
 
-Nexus releases ship to [GitHub Packages](https://github.com/orgs/BadgersMC/packages?repo_name=nexus). The repo is private; consumer builds need a token that has `read:packages` scope.
+Nexus is published via [JitPack](https://jitpack.io). JitPack builds the artifacts from this public repo on demand the first time someone requests them, then caches them on its CDN.
+
+### Coordinates
+
+```
+com.github.BadgersMC.Nexus:<module>:<tag>
+```
+
+- `<module>` matches a sub-project name (`nexus-core`, `nexus-paper-gui`, …)
+- `<tag>` is a release tag, **with the `v` prefix** (e.g. `v2.1.1`) — JitPack uses the tag verbatim
+- For a SNAPSHOT off a branch: `com.github.BadgersMC.Nexus:nexus-core:main-SNAPSHOT`
+
+No token required. The first request after a new tag triggers a build (~1–2 minutes); after that it is served from the CDN.
 
 ### Local development
 
-Add to `~/.gradle/gradle.properties` (one-time):
+Plain `./gradlew build` works once `maven("https://jitpack.io")` is in your repositories. Nothing else to configure.
 
-```properties
-gpr.user=<your-github-username>
-gpr.token=<personal-access-token-with-read:packages>
+If you are hacking on Nexus and want to pick up in-progress changes that are not tagged yet:
+
+```bash
+git clone https://github.com/BadgersMC/Nexus.git
+cd Nexus
+./gradlew -PuseMavenLocal=true publishToMavenLocal
 ```
 
-Then `./gradlew build` resolves Nexus from GHP normally. The token never enters the project repo.
+Then in your consumer: `./gradlew -PuseMavenLocal=true build` — `mavenLocal()` is gated behind that flag on every Nexus consumer in the org so CI never picks up stale local jars.
 
 ### GitHub Actions on a consumer plugin
 
-Add to the workflow that builds the plugin:
+Nothing to configure. JitPack is public.
 
 ```yaml
 - name: Build
-  env:
-    GITHUB_ACTOR: ${{ github.actor }}
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # already has read:packages
   run: ./gradlew build
 ```
 
-The `GITHUB_TOKEN` is auto-provided by Actions and has read access to packages in the same org.
+### Internal mirror (GitHub Packages)
+
+Nexus is *also* published to `maven.pkg.github.com/BadgersMC/Nexus` on every tag — that workflow stays in place for internal CI mirrors. Consumer plugins should not need it. See `.github/workflows/publish.yml` to inspect or re-trigger.
 
 ### Publishing a new Nexus release
 
-1. Bump `version` in `build.gradle.kts` (root + check sub-modules pull from `rootProject.version`).
-2. Commit, push, open PR, merge to `main`.
-3. Tag the merge commit: `git tag v1.12.0 && git push origin v1.12.0`.
-4. The `Publish to GitHub Packages` workflow fires, runs the tests, and publishes every module to `maven.pkg.github.com/BadgersMC/nexus`.
+1. Bump `version` in `build.gradle.kts` (sub-modules pull from `rootProject.version`).
+2. Merge to `main`.
+3. Tag: `git tag v2.2.0 && git push origin v2.2.0`.
+4. The `Publish to GitHub Packages` workflow fires (runs the test suite + pushes to GHP). JitPack picks up the new tag on the first consumer request.
 
-The workflow checks that the tag string matches the project version and fails fast otherwise. Manual publishes are also possible via the Actions tab (`workflow_dispatch`).
+The workflow checks that the tag matches the project version and fails fast otherwise.
 
 ## License
 
