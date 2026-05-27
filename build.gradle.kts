@@ -36,7 +36,7 @@ subprojects {
             repositories {
                 maven {
                     name = "GitHubPackages"
-                    url = uri("https://maven.pkg.github.com/BadgersMC/nexus")
+                    url = uri("https://maven.pkg.github.com/BadgersMC/Nexus")
                     credentials {
                         username = project.findProperty("gpr.user") as String?
                             ?: System.getenv("GITHUB_ACTOR")
