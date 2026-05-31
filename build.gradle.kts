@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "net.badgersmc"
-version = "2.2.0"
+version = "2.2.1"
 
 /**
  * Root project is a pure multi-module aggregator. All publishable artifacts
