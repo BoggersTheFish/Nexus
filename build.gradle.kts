@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "2.0.21" apply false
     kotlin("plugin.serialization") version "2.0.21" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
+    id("com.gradle.plugin-publish") version "1.3.1" apply false
 }
 
 group = "net.badgersmc"
