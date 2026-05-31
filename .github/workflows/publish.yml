@@ -57,8 +57,14 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: ci
+    # always() forces this gate to evaluate even though `ci` is skipped on tag
+    # pushes (its own `if` excludes tags). Without it, a skipped dependency
+    # would cascade-skip `publish` and no release would ever be cut.
+    if: >-
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.ci.result != 'failure'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
