@@ -22,3 +22,6 @@ install:
       :nexus-paper-listeners:publishToMavenLocal
       :nexus-vault:publishToMavenLocal
       :nexus-papi:publishToMavenLocal
+      :nexus-permissions:publishToMavenLocal
+      :nexus-permissions-gradle:publishToMavenLocal
+      :nexus-worldedit:publishToMavenLocal

@@ -135,4 +135,6 @@ jobs:
             :nexus-paper-listeners:publish \
             :nexus-vault:publish \
             :nexus-papi:publish \
+            :nexus-permissions:publish \
+            :nexus-permissions-gradle:publish \
             :nexus-worldedit:publish
