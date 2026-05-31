@@ -31,7 +31,7 @@ publishing {
         create<MavenPublication>("maven") {
             groupId = "net.badgersmc"
             artifactId = "nexus-worldedit"
-            version = "2.1.2"
+            version = rootProject.version.toString()
             from(components["java"])
         }
     }

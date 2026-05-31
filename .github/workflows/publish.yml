@@ -128,4 +128,5 @@ jobs:
             :nexus-paper-bedrock:publish \
             :nexus-paper-listeners:publish \
             :nexus-vault:publish \
-            :nexus-papi:publish
+            :nexus-papi:publish \
+            :nexus-worldedit:publish
