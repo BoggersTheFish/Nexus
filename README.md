@@ -369,6 +369,39 @@ configure<net.badgersmc.nexus.permissions.gradle.NexusPermissionsExtension> {
 }
 ```
 
+<details>
+<summary>Prefer the <code>plugins { }</code> DSL? Map the plugin id to its JitPack module.</summary>
+
+JitPack rewrites every artifact to the `com.github.BadgersMC.Nexus` group, so the plugin **marker** id (`net.badgersmc.nexus.permissions`) can't be resolved by the standard `plugins {}` lookup. Bridge it once in `settings.gradle.kts` and the idiomatic DSL works:
+
+```kotlin
+// settings.gradle.kts (consumer)
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven("https://jitpack.io")
+    }
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "net.badgersmc.nexus.permissions") {
+                useModule("com.github.BadgersMC.Nexus:nexus-permissions-gradle:${requested.version}")
+            }
+        }
+    }
+}
+```
+
+```kotlin
+// build.gradle.kts (consumer)
+plugins {
+    id("net.badgersmc.nexus.permissions") version "v2.2.1"
+}
+```
+
+Same plugin, same extension — only the resolution wiring differs from the `buildscript` form above. Once Plugin Portal submission lands (post-2.2) this mapping becomes unnecessary.
+
+</details>
+
 Drop a `src/main/resources/paper-plugin.yml` that contains everything except `permissions:` — the merger fills the rest:
 
 ```yaml
