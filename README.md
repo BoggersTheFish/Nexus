@@ -22,6 +22,7 @@
 | **`nexus-papi`** | 2.0.0 | `@PapiExpansion` + `PlaceholderResolver` + auto-registration with PlaceholderAPI |
 | **`nexus-permissions`** | 2.2.0 | Kotlin DSL for permission trees + YAML serializer + `paper-plugin.yml` merger (library) |
 | **`nexus-permissions-gradle`** | 2.2.0 | Gradle plugin: runs the DSL during `processResources`, splices the result into `paper-plugin.yml` before `shadowJar` |
+| **`nexus-worldedit`** | 2.2.0 | WorldEdit / FAWE facade + `SchematicService` (compileOnly WE/FAWE; library) |
 
 Roadmap and acceptance REQs: see [`docs/roadmap.md`](docs/roadmap.md) and [`docs/requirements.md`](docs/requirements.md).
 
@@ -41,20 +42,22 @@ repositories {
 
 dependencies {
     // Core DI + config + coroutines — always needed
-    implementation("com.github.BadgersMC.Nexus:nexus-core:v2.2.0")
+    implementation("com.github.BadgersMC.Nexus:nexus-core:v2.2.1")
 
     // Pick whichever extras you want:
-    implementation("com.github.BadgersMC.Nexus:nexus-paper:v2.2.0")            // Paper commands
-    implementation("com.github.BadgersMC.Nexus:nexus-resources:v2.2.0")        // Bundled resource extraction
-    implementation("com.github.BadgersMC.Nexus:nexus-i18n:v2.2.0")             // MiniMessage i18n
-    implementation("com.github.BadgersMC.Nexus:nexus-persistence:v2.2.0")      // DB + migrations
-    implementation("com.github.BadgersMC.Nexus:nexus-scheduler:v2.2.0")        // Bukkit scheduler facade
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-gui:v2.2.0")        // IFramework GUIs
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-bedrock:v2.2.0")    // Cumulus / Floodgate
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-listeners:v2.2.0")  // @Listener auto-register
-    implementation("com.github.BadgersMC.Nexus:nexus-vault:v2.2.0")            // Vault economy
-    implementation("com.github.BadgersMC.Nexus:nexus-papi:v2.2.0")             // PlaceholderAPI
-    implementation("com.github.BadgersMC.Nexus:nexus-paper-loader:v2.2.0")     // Shared PluginLoader
+    implementation("com.github.BadgersMC.Nexus:nexus-paper:v2.2.1")            // Paper commands
+    implementation("com.github.BadgersMC.Nexus:nexus-resources:v2.2.1")        // Bundled resource extraction
+    implementation("com.github.BadgersMC.Nexus:nexus-i18n:v2.2.1")             // MiniMessage i18n
+    implementation("com.github.BadgersMC.Nexus:nexus-persistence:v2.2.1")      // DB + migrations
+    implementation("com.github.BadgersMC.Nexus:nexus-scheduler:v2.2.1")        // Bukkit scheduler facade
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-gui:v2.2.1")        // IFramework GUIs
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-bedrock:v2.2.1")    // Cumulus / Floodgate
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-listeners:v2.2.1")  // @Listener auto-register
+    implementation("com.github.BadgersMC.Nexus:nexus-vault:v2.2.1")            // Vault economy
+    implementation("com.github.BadgersMC.Nexus:nexus-papi:v2.2.1")             // PlaceholderAPI
+    implementation("com.github.BadgersMC.Nexus:nexus-paper-loader:v2.2.1")     // Shared PluginLoader
+    implementation("com.github.BadgersMC.Nexus:nexus-permissions:v2.2.1")      // Permission-tree DSL (library)
+    implementation("com.github.BadgersMC.Nexus:nexus-worldedit:v2.2.1")        // WorldEdit / FAWE facade
 }
 ```
 
@@ -344,7 +347,7 @@ buildscript {
         maven("https://jitpack.io")
     }
     dependencies {
-        classpath("com.github.BadgersMC.Nexus:nexus-permissions-gradle:v2.2.0")
+        classpath("com.github.BadgersMC.Nexus:nexus-permissions-gradle:v2.2.1")
     }
 }
 
