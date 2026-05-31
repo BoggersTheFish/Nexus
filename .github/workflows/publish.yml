@@ -138,3 +138,18 @@ jobs:
             :nexus-permissions:publish \
             :nexus-permissions-gradle:publish \
             :nexus-worldedit:publish
+
+      - name: Publish permissions plugin to Gradle Plugin Portal
+        # No-ops until the GRADLE_PUBLISH_KEY/SECRET repo secrets are set,
+        # so the release pipeline never fails for lack of Portal creds.
+        # Portal versions are immutable — re-tagging an already-published
+        # version 409s, same as GHP, hence the new release version each time.
+        env:
+          GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
+          GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+        if: env.GRADLE_PUBLISH_KEY != ''
+        run: |
+          ./gradlew --no-daemon --no-configuration-cache \
+            :nexus-permissions-gradle:publishPlugins \
+            -Pgradle.publish.key="$GRADLE_PUBLISH_KEY" \
+            -Pgradle.publish.secret="$GRADLE_PUBLISH_SECRET"
