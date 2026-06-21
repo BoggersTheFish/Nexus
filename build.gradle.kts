@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "net.badgersmc"
-version = "2.2.1"
+version = "2.3.0-ts.1"
 
 /** Root project aggregator; publishable artifacts live in `nexus-*` modules. */
 
