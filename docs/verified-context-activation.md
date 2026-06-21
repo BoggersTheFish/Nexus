@@ -18,11 +18,11 @@ Cycle issues include the complete closed path. Verification traversals cannot re
 
 `VerificationReceipt` has an explicit schema version, accepted/rejected status, component and dependency counts, typed issues, activation order, shutdown order, and a SHA-256 graph hash. Nodes, edges, lifecycle signatures, issues, and orders are sorted by stable semantic keys. The hash comes from a versioned canonical graph representation, never object identity or map/reflection iteration order.
 
-`VerificationReceipt.toJson()` emits stable JSON without requiring another runtime dependency. Receipt fields remain directly inspectable in Kotlin.
+`VerificationReceipt.toJson()` emits stable JSON without requiring another runtime dependency. Each typed issue includes a structured `evidence` object (for example cycle paths, parameters, requested types, providers, qualifiers, lifecycle methods, and reasons) alongside its human-readable detail. Receipt fields remain directly inspectable in Kotlin. Schema version 2 identifies this structured issue format.
 
 ## Activation, rollback, and shutdown
 
-Accepted singleton components activate in dependency-first topological order. Prototype definitions are fully verified but remain lazy. If construction or `@PostConstruct` fails, activation stops, already activated components receive `@PreDestroy` in reverse dependency order, runtime coroutine resources close, and `ContextActivationException` reports activated and cleaned component names. A failed context is never returned.
+Accepted singleton components activate in dependency-first topological order. Prototype definitions are fully verified but remain lazy. If construction or `@PostConstruct` fails, activation stops. A singleton that reached construction but failed `@PostConstruct` is removed from the registry and receives best-effort `@PreDestroy`; previously installed external/config instances and activated scanned components are then cleaned in reverse dependency order. Runtime coroutine resources close, and `ContextActivationException` separately reports constructed, activated, failed, and successfully cleaned component names. A failed context is never returned.
 
 Normal `close()` is idempotent. Dependants are destroyed before their providers, and registry removal ensures each singleton is destroyed at most once. The computed order is included in the verification receipt.
 

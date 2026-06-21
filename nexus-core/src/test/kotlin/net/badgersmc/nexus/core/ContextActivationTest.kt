@@ -16,6 +16,7 @@ class ContextActivationTest {
     fun reset() {
         ActivationEvents.values.clear()
         RejectedComponent.constructions = 0
+        FailingResourceService.resourceOpen = false
     }
 
     private fun scanned(name: String, type: kotlin.reflect.KClass<*>, scope: ScopeType = ScopeType.SINGLETON) =
@@ -35,15 +36,45 @@ class ContextActivationTest {
     }
 
     @Test
-    fun `activation failure cleans successfully activated dependencies`() {
+    fun `activation failure cleans partial component and all installed singleton origins`() {
+        val external = ExternalResource("external")
+        val configuration = ExternalResource("configuration")
         val candidate = candidate(
+            BeanDefinition(
+                "externalResource", ExternalResource::class,
+                origin = BeanOrigin.EXTERNAL_INSTANCE, factory = { external }
+            ),
+            BeanDefinition(
+                "configurationResource", ConfigResource::class,
+                origin = BeanOrigin.CONFIGURATION, factory = { ConfigResource(configuration) }
+            ),
             scanned("cleanDependency", CleanDependency::class),
-            scanned("failingService", FailingService::class)
+            scanned("failingResourceService", FailingResourceService::class)
         )
         val failure = assertThrows<ContextActivationException> { candidate.activate() }
-        assertEquals(listOf("cleanDependency"), failure.activatedComponents)
-        assertEquals(listOf("cleanDependency"), failure.cleanedComponents)
-        assertEquals(listOf("clean:start", "fail:start", "clean:stop"), ActivationEvents.values)
+        assertEquals(
+            listOf("configurationResource", "externalResource", "cleanDependency", "failingResourceService"),
+            failure.constructedComponents
+        )
+        assertEquals(
+            listOf("configurationResource", "externalResource", "cleanDependency"),
+            failure.activatedComponents
+        )
+        assertEquals(listOf("failingResourceService"), failure.failedComponents)
+        assertEquals(
+            listOf("failingResourceService", "externalResource", "configurationResource", "cleanDependency"),
+            failure.cleanedComponents
+        )
+        assertFalse(FailingResourceService.resourceOpen)
+        assertFalse(external.open)
+        assertFalse(configuration.open)
+        assertEquals(
+            listOf(
+                "clean:start", "failing:allocated", "failing:start", "failing:stop",
+                "external:stop", "configuration:stop", "clean:stop"
+            ),
+            ActivationEvents.values
+        )
     }
 
     @Test
@@ -91,11 +122,30 @@ internal class CleanDependency {
     @PostConstruct fun start() { ActivationEvents.values += "clean:start" }
     @PreDestroy fun stop() { ActivationEvents.values += "clean:stop" }
 }
-internal class FailingService(val dependency: CleanDependency) {
+internal class FailingResourceService(val dependency: CleanDependency) {
+    init {
+        resourceOpen = true
+        ActivationEvents.values += "failing:allocated"
+    }
     @PostConstruct fun start() {
-        ActivationEvents.values += "fail:start"
+        ActivationEvents.values += "failing:start"
         error("expected lifecycle failure")
     }
+    @PreDestroy fun stop() {
+        resourceOpen = false
+        ActivationEvents.values += "failing:stop"
+    }
+    companion object { var resourceOpen = false }
+}
+internal class ExternalResource(private val label: String) {
+    var open = true
+    @PreDestroy fun stop() {
+        open = false
+        ActivationEvents.values += "$label:stop"
+    }
+}
+internal class ConfigResource(private val resource: ExternalResource) {
+    @PreDestroy fun stop() = resource.stop()
 }
 internal class OrderedDataSource { @PreDestroy fun stop() { ActivationEvents.values += "dataSource" } }
 internal class OrderedRepository(val dataSource: OrderedDataSource) {

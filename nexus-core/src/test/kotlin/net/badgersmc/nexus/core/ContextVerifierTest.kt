@@ -81,6 +81,30 @@ class ContextVerifierTest {
         val two = ContextVerifier.verify(listOf(definition("two", OnePort::class))).receipt
         assertNotEquals(one.graphHash, two.graphHash)
     }
+
+    @Test
+    fun `receipt JSON preserves typed issue evidence`() {
+        val missing = ContextVerifier.verify(listOf(definition("service", ValidService::class))).receipt.toJson()
+        assertTrue(missing.contains("\"schemaVersion\":2"))
+        assertTrue(missing.contains("\"parameter\":\"repository\""))
+        assertTrue(missing.contains("\"requestedType\":\"net.badgersmc.nexus.core.ValidRepository\""))
+        assertTrue(missing.contains("\"qualifier\":null"))
+
+        val ambiguous = ContextVerifier.verify(
+            listOf(
+                definition("one", OnePort::class), definition("two", TwoPort::class),
+                definition("consumer", AmbiguousConsumer::class)
+            )
+        ).receipt.toJson()
+        assertTrue(ambiguous.contains("\"providers\":[\"one\",\"two\"]"))
+
+        val cycle = ContextVerifier.verify(listOf(definition("direct", DirectCycle::class))).receipt.toJson()
+        assertTrue(cycle.contains("\"cycle\":[\"direct\",\"direct\"]"))
+
+        val lifecycle = ContextVerifier.verify(listOf(definition("invalid", InvalidLifecycle::class))).receipt.toJson()
+        assertTrue(lifecycle.contains("\"method\":\"start(kotlin.String)\""))
+        assertTrue(lifecycle.contains("\"reason\":\"callbacks must not declare arguments\""))
+    }
 }
 
 internal class ValidRepository

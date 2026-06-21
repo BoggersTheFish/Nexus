@@ -22,7 +22,7 @@ class NexusContext internal constructor(
 ) {
     private val registry = ComponentRegistry()
     private val factory = BeanFactory(registry)
-    private var active = verificationReceipt != null
+    private var active = false
     private var closed = false
 
     val dispatchers: NexusDispatchers? = classLoader?.let { NexusDispatchers(it, contextName) }
@@ -98,45 +98,79 @@ class NexusContext internal constructor(
 
     internal fun activate(definitions: List<BeanDefinition>, receipt: VerificationReceipt): NexusContext {
         check(receipt.accepted) { "A rejected candidate cannot activate" }
-        definitions.sortedBy { it.name }.forEach { definition ->
-            when (definition.origin) {
-                BeanOrigin.INFRASTRUCTURE -> Unit
-                BeanOrigin.SCANNED_COMPONENT -> registry.register(
-                    definition.copy(factory = factory.createFactory(definition.type))
-                )
-                else -> {
-                    registry.register(definition)
-                    registry.putSingleton(definition.name, definition.factory())
-                }
+        val runtimeDefinitions = definitions.sortedBy { it.name }.associate { definition ->
+            val runtimeDefinition = if (definition.origin == BeanOrigin.SCANNED_COMPONENT) {
+                definition.copy(factory = factory.createFactory(definition.type))
+            } else {
+                definition
             }
+            definition.name to runtimeDefinition
         }
-        registerRuntimeInfrastructure()
-
-        val activated = mutableListOf<String>()
+        val progress = ActivationProgress()
         try {
-            receipt.activationOrder.forEach { name ->
-                val definition = registry.getDefinition(name) ?: return@forEach
-                if (definition.origin == BeanOrigin.SCANNED_COMPONENT && definition.scope == ScopeType.SINGLETON) {
-                    factory.activateSingleton(name)
-                    activated += name
-                }
-            }
+            runtimeDefinitions.values.filterNot { it.origin == BeanOrigin.INFRASTRUCTURE }
+                .forEach(registry::register)
+            registerRuntimeInfrastructure()
+            installPreparedSingletons(receipt, runtimeDefinitions, progress)
+            activateScannedSingletons(receipt, progress)
+            progress.currentComponent = null
             active = true
             return this
         } catch (failure: Throwable) {
-            val cleaned = cleanup(receipt.shutdownOrder.filter { it in activated })
+            progress.currentComponent?.takeUnless { it in progress.failed }?.let(progress.failed::add)
+            val managedNames = runtimeDefinitions.values
+                .filterNot { it.origin == BeanOrigin.INFRASTRUCTURE }
+                .mapTo(mutableSetOf()) { it.name }
+            progress.cleaned += cleanup(receipt.shutdownOrder.filter { it in managedNames })
             scope?.cancel("NexusContext activation failed")
             dispatchers?.shutdown()
             registry.clear()
             closed = true
             throw ContextActivationException(
-                "Nexus context activation failed after ${activated.size} component(s)",
+                "Nexus context activation failed at '${progress.failed.lastOrNull() ?: "unknown"}'",
                 failure,
                 receipt,
-                activated.toList(),
-                cleaned
+                progress.constructed.toList(),
+                progress.activated.toList(),
+                progress.failed.toList(),
+                progress.cleaned.distinct()
             )
         }
+    }
+
+    private fun installPreparedSingletons(
+        receipt: VerificationReceipt,
+        definitions: Map<String, BeanDefinition>,
+        progress: ActivationProgress
+    ) {
+        receipt.activationOrder.mapNotNull(definitions::get)
+            .filter { it.origin != BeanOrigin.SCANNED_COMPONENT && it.origin != BeanOrigin.INFRASTRUCTURE }
+            .filter { it.scope == ScopeType.SINGLETON }
+            .forEach { definition ->
+                progress.currentComponent = definition.name
+                val instance = definition.factory()
+                progress.constructed += definition.name
+                registry.putSingleton(definition.name, instance)
+                progress.activated += definition.name
+            }
+    }
+
+    private fun activateScannedSingletons(receipt: VerificationReceipt, progress: ActivationProgress) {
+        receipt.activationOrder.mapNotNull(registry::getDefinition)
+            .filter { it.origin == BeanOrigin.SCANNED_COMPONENT && it.scope == ScopeType.SINGLETON }
+            .forEach { definition ->
+                progress.currentComponent = definition.name
+                try {
+                    factory.activateSingleton(definition.name)
+                    progress.constructed += definition.name
+                    progress.activated += definition.name
+                } catch (failure: SingletonActivationException) {
+                    progress.constructed += failure.beanName
+                    progress.failed += failure.beanName
+                    if (failure.cleanupSucceeded) progress.cleaned += failure.beanName
+                    throw failure
+                }
+            }
     }
 
     private fun registerRuntimeInfrastructure() {
@@ -207,8 +241,7 @@ class NexusContext internal constructor(
         val cleaned = mutableListOf<String>()
         order.distinct().forEach { name ->
             registry.removeSingleton(name)?.let { bean ->
-                factory.invokePreDestroy(bean)
-                cleaned += name
+                if (factory.invokePreDestroy(bean)) cleaned += name
             }
         }
         return cleaned
@@ -217,6 +250,14 @@ class NexusContext internal constructor(
     private fun ensureActive() {
         check(active && !closed) { "NexusContext is not active" }
     }
+}
+
+private class ActivationProgress {
+    val constructed = mutableListOf<String>()
+    val activated = mutableListOf<String>()
+    val failed = mutableListOf<String>()
+    val cleaned = mutableListOf<String>()
+    var currentComponent: String? = null
 }
 
 /** A verified-but-not-yet-active context and its inspectable graph receipt. */

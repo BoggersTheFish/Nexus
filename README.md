@@ -132,7 +132,7 @@ if (receipt.accepted) {
 }
 ```
 
-Rejected candidates throw `ContextVerificationException` if activation is attempted. See [verified context activation](docs/verified-context-activation.md) for receipt and lifecycle details.
+Rejected candidates throw `ContextVerificationException` if activation is attempted. Activation failures throw `ContextActivationException` with distinct constructed, activated, failed, and cleaned component lists. See [verified context activation](docs/verified-context-activation.md) for receipt and lifecycle details.
 
 ## Module guides
 

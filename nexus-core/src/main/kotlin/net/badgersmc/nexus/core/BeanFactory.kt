@@ -56,8 +56,14 @@ class BeanFactory(
             registry.getSingleton(name) ?: run {
                 val instance = createBean(definition)
                 registry.putSingleton(name, instance)
-                invokePostConstruct(instance)
-                instance
+                try {
+                    invokePostConstruct(instance)
+                    instance
+                } catch (failure: Throwable) {
+                    registry.removeSingleton(name)
+                    val cleanupSucceeded = invokePreDestroy(instance)
+                    throw SingletonActivationException(name, cleanupSucceeded, failure)
+                }
             }
         }
     }
@@ -105,18 +111,21 @@ class BeanFactory(
      * Invoke @PreDestroy methods on a bean.
      * Supports both regular and suspend functions.
      */
-    fun invokePreDestroy(bean: Any) {
+    fun invokePreDestroy(bean: Any): Boolean {
+        var succeeded = true
         bean::class.functions
             .filter { it.findAnnotation<PreDestroy>() != null }
             .sortedBy { it.name + it.parameters.joinToString { parameter -> parameter.type.toString() } }
             .forEach { method ->
                 try {
                     invokeLifecycleMethod(bean, method)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
+                    succeeded = false
                     // Log but don't throw during shutdown
                     System.err.println("Failed to invoke @PreDestroy on ${bean::class.simpleName}: ${e.message}")
                 }
             }
+        return succeeded
     }
 
     /**
@@ -162,3 +171,9 @@ class BeanFactory(
  * Exception thrown when Nexus encounters an error.
  */
 open class NexusException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+internal class SingletonActivationException(
+    val beanName: String,
+    val cleanupSucceeded: Boolean,
+    cause: Throwable
+) : NexusException("Singleton '$beanName' failed during activation and was removed", cause)

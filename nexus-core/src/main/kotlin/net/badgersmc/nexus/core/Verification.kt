@@ -149,22 +149,14 @@ data class VerificationReceipt(
         append(",\"issues\":[")
         issues.forEachIndexed { index, issue ->
             if (index > 0) append(',')
-            append("{\"code\":\"").append(escape(issue.code)).append("\",\"beanName\":\"")
-                .append(escape(issue.beanName)).append("\",\"detail\":\"")
-                .append(escape(issue.detail)).append("\"}")
+            append(issue.toJson())
         }
-        append("],\"activationOrder\":").append(jsonStrings(activationOrder))
-        append(",\"shutdownOrder\":").append(jsonStrings(shutdownOrder)).append('}')
+        append("],\"activationOrder\":").append(toJsonStrings(activationOrder))
+        append(",\"shutdownOrder\":").append(toJsonStrings(shutdownOrder)).append('}')
     }
 
     companion object {
-        const val SCHEMA_VERSION: Int = 1
-        private fun escape(value: String): String = value
-            .replace("\\", "\\\\").replace("\"", "\\\"")
-            .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-        private fun jsonStrings(values: List<String>) = values.joinToString(prefix = "[", postfix = "]") {
-            "\"${escape(it)}\""
-        }
+        const val SCHEMA_VERSION: Int = 2
     }
 }
 
@@ -409,6 +401,52 @@ private fun typeName(type: KClass<*>): String = type.qualifiedName ?: type.java.
 private fun constructorSignature(constructor: KFunction<*>): String =
     constructor.parameters.joinToString(prefix = "(", postfix = ")") { it.type.toString() }
 
+private fun VerificationIssue.toJson(): String = buildString {
+    append("{\"code\":").append(toJsonString(code))
+    append(",\"beanName\":").append(toJsonString(beanName))
+    append(",\"detail\":").append(toJsonString(detail))
+    append(",\"evidence\":{")
+    when (this@toJson) {
+        is VerificationIssue.MissingDependency -> {
+            append("\"parameter\":").append(toJsonString(parameter))
+            append(",\"requestedType\":").append(toJsonString(requestedType))
+            append(",\"qualifier\":").append(qualifier?.let(::toJsonString) ?: "null")
+        }
+        is VerificationIssue.AmbiguousDependency -> {
+            append("\"parameter\":").append(toJsonString(parameter))
+            append(",\"requestedType\":").append(toJsonString(requestedType))
+            append(",\"providers\":").append(toJsonStrings(providers))
+        }
+        is VerificationIssue.CircularDependency -> append("\"cycle\":").append(toJsonStrings(cycle))
+        is VerificationIssue.DuplicateBeanName -> append("\"types\":").append(toJsonStrings(types))
+        is VerificationIssue.DuplicateTypeIndexEntry ->
+            append("\"indexedType\":").append(toJsonString(indexedType))
+        is VerificationIssue.NoUsableConstructor ->
+            append("\"componentType\":").append(toJsonString(componentType))
+        is VerificationIssue.UnresolvableParameterType -> {
+            append("\"parameter\":").append(toJsonString(parameter))
+            append(",\"renderedType\":").append(toJsonString(renderedType))
+        }
+        is VerificationIssue.InvalidLifecycleMethod -> {
+            append("\"method\":").append(toJsonString(method))
+            append(",\"reason\":").append(toJsonString(reason))
+        }
+        is VerificationIssue.ContradictoryQualifier -> {
+            append("\"parameter\":").append(toJsonString(parameter))
+            append(",\"qualifier\":").append(toJsonString(qualifier))
+            append(",\"requestedType\":").append(toJsonString(requestedType))
+            append(",\"providerType\":").append(toJsonString(providerType))
+        }
+    }
+    append("}}")
+}
+
+private fun toJsonString(value: String): String = "\"${value.escapeJson()}\""
+private fun toJsonStrings(values: List<String>): String =
+    values.joinToString(separator = ",", prefix = "[", postfix = "]", transform = ::toJsonString)
+private fun String.escapeJson(): String = replace("\\", "\\\\").replace("\"", "\\\"")
+    .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
 /** Thrown by one-call creation when a candidate graph is rejected. */
 class ContextVerificationException(val receipt: VerificationReceipt) : NexusException(
     "Nexus context verification rejected ${receipt.issues.size} issue(s): " +
@@ -420,6 +458,8 @@ class ContextActivationException(
     message: String,
     cause: Throwable,
     val receipt: VerificationReceipt,
+    val constructedComponents: List<String>,
     val activatedComponents: List<String>,
+    val failedComponents: List<String>,
     val cleanedComponents: List<String>
 ) : NexusException(message, cause)
