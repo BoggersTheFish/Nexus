@@ -8,12 +8,7 @@ plugins {
 group = "net.badgersmc"
 version = "2.2.1"
 
-/**
- * Root project is a pure multi-module aggregator. All publishable artifacts
- * live under the `nexus-*` sub-modules. The Hytale support that used to live
- * here was removed in 2.0.0 — see the changelog / README for the migration
- * story (TL;DR: there is no more Hytale code anywhere in this repo).
- */
+/** Root project aggregator; publishable artifacts live in `nexus-*` modules. */
 
 allprojects {
     repositories {

@@ -62,6 +62,8 @@ class BeanFactory(
         }
     }
 
+    internal fun activateSingleton(name: String): Any = getBean(name)
+
     /**
      * Create a new prototype bean instance.
      */
@@ -89,6 +91,7 @@ class BeanFactory(
     private fun invokePostConstruct(bean: Any) {
         bean::class.functions
             .filter { it.findAnnotation<PostConstruct>() != null }
+            .sortedBy { it.name + it.parameters.joinToString { parameter -> parameter.type.toString() } }
             .forEach { method ->
                 try {
                     invokeLifecycleMethod(bean, method)
@@ -105,6 +108,7 @@ class BeanFactory(
     fun invokePreDestroy(bean: Any) {
         bean::class.functions
             .filter { it.findAnnotation<PreDestroy>() != null }
+            .sortedBy { it.name + it.parameters.joinToString { parameter -> parameter.type.toString() } }
             .forEach { method ->
                 try {
                     invokeLifecycleMethod(bean, method)
@@ -157,4 +161,4 @@ class BeanFactory(
 /**
  * Exception thrown when Nexus encounters an error.
  */
-class NexusException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+open class NexusException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)

@@ -2,7 +2,7 @@
 
 **Nexus** is a Kotlin-first application framework for Paper plugins. It bundles dependency injection with classpath scanning, YAML configuration, command auto-discovery, coroutine infrastructure, and a growing set of opt-in modules that handle the boilerplate every plugin reinvents: i18n, persistence, schedulers, GUIs, Bedrock forms, Vault, PlaceholderAPI, and more.
 
-> **2.0.0 — Hytale support removed.** Earlier Nexus releases shipped Hytale command adapters in the root project. The Hytale module is no longer maintained and was dropped in 2.0.0. If you still need it, pin to `1.11.0`.
+This repository is a fork-derived implementation of [BadgersMC/Nexus](https://github.com/BadgersMC/Nexus). It retains the upstream project attribution and MIT licence.
 
 ## Modules
 
@@ -116,6 +116,23 @@ override fun onDisable() {
     scheduler?.cancelAll()   // cancels every outstanding Bukkit task
 }
 ```
+
+`NexusContext.create(...)` remains the one-call API. It now prepares and verifies the full dependency graph before activating any scanned component. Consumers that need an auditable preflight can inspect the immutable receipt explicitly:
+
+```kotlin
+val candidate = NexusContext.prepare(
+    basePackage = "net.example.myplugin",
+    classLoader = this::class.java.classLoader,
+    configDirectory = dataFolder.toPath()
+)
+
+val receipt = candidate.receipt
+if (receipt.accepted) {
+    val nexus = candidate.activate()
+}
+```
+
+Rejected candidates throw `ContextVerificationException` if activation is attempted. See [verified context activation](docs/verified-context-activation.md) for receipt and lifecycle details.
 
 ## Module guides
 
