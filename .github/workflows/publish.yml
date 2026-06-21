@@ -27,6 +27,8 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x ./gradlew
+      - name: Build and test all modules
+        run: ./gradlew build --no-daemon --no-configuration-cache
       - name: Run detekt
         run: ./gradlew detekt --no-daemon --no-configuration-cache
       - name: Upload detekt report
@@ -97,30 +99,12 @@ jobs:
           echo "Tag $TAG matches project version. Publishing."
 
       - name: Run tests (gate)
-        # Skip root :test — its compileClasspath depends on the Hytale Server
-        # jar from maven.hytale.com which is intermittently unreachable from
-        # CI. Sub-modules don't depend on the Hytale jar, so we exercise them
-        # directly.
-        run: |
-          ./gradlew --no-daemon --no-configuration-cache \
-            :nexus-resources:test \
-            :nexus-i18n:test \
-            :nexus-persistence:test \
-            :nexus-scheduler:test \
-            :nexus-paper-gui:test \
-            :nexus-paper-bedrock:test \
-            :nexus-paper-loader:build \
-            :nexus-paper-listeners:build \
-            :nexus-vault:build \
-            :nexus-papi:build
+        run: ./gradlew build --no-daemon --no-configuration-cache
 
       - name: Publish all modules
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Skips the root :publish if it fails to resolve the Hytale API
-        # (the hytale Maven repo is sometimes unreachable from CI).
-        # Sub-modules still publish — they don't depend on the Hytale jar.
         run: |
           ./gradlew --no-daemon --no-configuration-cache \
             :nexus-core:publish \
